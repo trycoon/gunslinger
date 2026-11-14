@@ -18,6 +18,60 @@ for 300 ms. Debounce the trigger. Reload logic stays in the pistol: Lightgun
 mode has infinite ammunition. Duplicate sequences are ignored per connection;
 reconnecting allows the ESP32's counter to restart.
 
+## Power saving and trigger wiring
+
+The example firmware enters ESP32 deep sleep after ten minutes without a fired
+shot. It changes the trigger input from GPIO 18 to **GPIO 33**, because GPIO 33
+is RTC-capable and can wake the original ESP32 from deep sleep. Wire the trigger
+between GPIO 33 and 3.3 V; the firmware enables its pull-down. GPIO 18 cannot
+be used for deep-sleep wake, so move an existing trigger wire before flashing
+this version.
+
+A press pulls GPIO 33 high and wakes the ESP32. The firmware resumes BLE
+advertising, waits for the bridge to reconnect, then emits that waking shot once
+and turns on the laser. The waking shot can therefore be delayed by BLE
+reconnection. It only enters deep sleep when the trigger has returned low, so a
+held trigger cannot cause an immediate wake loop. No desktop Bluetooth pairing
+is needed.
+
+### Trigger wiring
+
+Use the ESP32's 3.3 V rail, not 5 V, for the trigger input. The firmware enables
+GPIO 33's internal RTC pull-down, so a short switch connection does not need an
+external resistor. The switch closes only when the trigger is pulled.
+
+![Trigger and laser-module wiring](images/esp32-wiring.svg)
+
+Do not connect GPIO 33 to a 5 V trigger circuit: ESP32 GPIOs are 3.3 V-only.
+Use the optional external 10 kOhm pull-down when the trigger wiring is long,
+runs alongside the laser supply, or is electrically noisy. It gives a stronger,
+more predictable idle level than the ESP32's internal pull-down. The firmware
+already debounces the switch; no capacitor is required.
+
+### Laser power switching
+
+Do not power a bare laser diode directly from GPIO 23. A correctly calculated
+series resistor and transistor can operate a known, low-power laser diode, but
+it is less tolerant of supply, temperature and part variation than it is for a
+normal indicator LED. Laser diodes have a sharp threshold and a strong
+temperature dependence: a small current increase can create a large optical
+power increase, while excessive current can cause permanent damage. A guessed
+resistor is therefore unsafe. Use a laser **module with an integrated driver**
+that is rated for the supply voltage and output power, or use a separate
+constant-current laser-diode driver designed for the specific bare diode.
+
+For a 3.3 V or 5 V laser module drawing up to 100 mA, use an AO3400A (or another
+logic-level N-channel MOSFET specified with an `Rds(on)` value at `Vgs = 2.5 V`
+or lower) as a low-side switch:
+
+The 100 Ohm gate resistor limits switching transients, and the 100 kOhm
+gate-to-ground resistor keeps the laser off while the ESP32 is booting or in
+deep sleep. The laser-module supply ground and ESP32 ground must be common.
+Place the 100 nF capacitor physically close to the module; add a 47 uF or
+larger capacitor across the module supply if its wiring is long or the module
+manufacturer recommends it. Select the supply voltage from the module's label
+or datasheet—do not assume that every module accepts 5 V.
+
 The camera captures continuously. On a trigger the detector examines buffered
 frames from 80 ms before receipt through 250 ms after, with a background from
 at least 200 ms before receipt. It requires two consecutive nearby detections

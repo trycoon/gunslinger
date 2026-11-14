@@ -139,7 +139,9 @@ for backend choices, examples, device selection and troubleshooting.
 ## Real gun and calibration
 
 1. Upload the ESP32 Arduino example, or implement [BLE protocol v1](docs/protocol.md)
-   in your firmware. Adapt GPIO pins to the existing button/laser-driver circuit.
+   in your firmware. Wire the trigger between GPIO 33 and 3.3 V; GPIO 33 is
+   required for its deep-sleep wake feature. Adapt the laser-driver pin to your
+   circuit.
 2. Camera/BLE configuration is in `~/.config/gunslinger/bridge.json`. For manual
    testing, if that file does not exist, copy `bridge/config.example.json` there,
    or pass `--config FILE`. Avoid overwriting an existing calibration.
