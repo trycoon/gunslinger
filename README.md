@@ -123,8 +123,10 @@ bash scripts/install-linux.sh picamera2  # Pi CSI camera
 
 The per-user installer bundles the Godot runner, game, bridge and Python venv
 under `~/.local/share/gunslinger`, and adds a launcher and desktop autostart.
-Existing `~/.config/gunslinger/bridge.json` is preserved; edit its camera backend
-if switching hardware. Run `~/.local/bin/gunslinger` manually.
+Existing `~/.config/gunslinger/bridge.json` is preserved. When switching hardware,
+pass the new backend explicitly to the installer; other settings are retained.
+For example, rerun `bash scripts/install-linux.sh opencv` for a USB webcam, then
+restart the game and recalibrate. Run `~/.local/bin/gunslinger` manually.
 Enable **automatic graphical login** in Ubuntu's user settings for boot-to-game.
 The launcher starts fullscreen and runs/stops its bridge alongside the game.
 Logs: `~/.local/state/gunslinger/bridge.log`. Run as the logged-in user with camera

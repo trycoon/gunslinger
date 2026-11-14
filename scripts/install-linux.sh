@@ -21,18 +21,14 @@ chmod +x "$install_dir/.tools/godot" "$install_dir/scripts/run.sh"
 "$install_dir/.venv/bin/python" -m pip install 'bleak>=1.0,<4'
 "$install_dir/.venv/bin/python" "$install_dir/scripts/generate_audio.py"
 "$install_dir/.tools/godot" --headless --path "$install_dir" --editor --import
-INSTALL_DIR="$install_dir" CONFIG_DIR="$config_dir" CAMERA_BACKEND="$camera_backend" /usr/bin/python3 - <<'SETUP'
-import json, os
+configure_args=()
+if (( $# > 0 )); then configure_args+=(--backend "$camera_backend"); fi
+/usr/bin/python3 "$install_dir/scripts/configure_bridge.py" "$config_dir/bridge.json" \
+  "$install_dir/bridge/config.example.json" "${configure_args[@]}"
+INSTALL_DIR="$install_dir" /usr/bin/python3 - <<'SETUP'
+import os
 from pathlib import Path
 installation = Path(os.environ['INSTALL_DIR'])
-configuration = Path(os.environ['CONFIG_DIR'])
-backend = os.environ['CAMERA_BACKEND']
-config_path = configuration / 'bridge.json'
-if not config_path.exists():
-    config = json.loads((installation / 'bridge/config.example.json').read_text())
-    config['camera']['backend'] = backend
-    config['ble']['enabled'] = backend != 'mock'
-    config_path.write_text(json.dumps(config, indent=2) + '\n')
 launcher = installation / 'launch.sh'
 launcher.write_text("""#!/usr/bin/env bash
 set -euo pipefail
