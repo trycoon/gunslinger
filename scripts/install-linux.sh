@@ -32,7 +32,7 @@ installation = Path(os.environ['INSTALL_DIR'])
 launcher = installation / 'launch.sh'
 launcher.write_text("""#!/usr/bin/env bash
 set -euo pipefail
-install_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+install_dir="$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")"
 mkdir -p "$HOME/.local/state/gunslinger"
 "$install_dir/.venv/bin/python" "$install_dir/bridge/bridge.py" >"$HOME/.local/state/gunslinger/bridge.log" 2>&1 &
 bridge_pid=$!
