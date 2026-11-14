@@ -7,7 +7,9 @@
 
 constexpr int TRIGGER_PIN = 18; // Button closes to ground, INPUT_PULLUP.
 constexpr int LASER_PIN = 23;   // Control input of your existing laser driver.
-constexpr unsigned long LASER_MS = 300;
+constexpr unsigned long LASER_MS = 300; // How long the laser stays on after the trigger is pressed.
+constexpr unsigned long DEBOUNCE_MS = 20; // Debounce time for the trigger button.
+  
 constexpr char SERVICE_UUID[] = "02f8b7a0-14b9-4e9e-9f6c-7d6054301000";
 constexpr char TRIGGER_UUID[] = "02f8b7a0-14b9-4e9e-9f6c-7d6054301001";
 BLECharacteristic* triggerCharacteristic;
@@ -30,6 +32,9 @@ class ServerCallbacks : public BLEServerCallbacks {
 
 void setup() {
   pinMode(TRIGGER_PIN, INPUT_PULLUP);
+  lastRaw = digitalRead(TRIGGER_PIN);
+  stableButton = lastRaw;
+  changedAt = millis();
   pinMode(LASER_PIN, OUTPUT);
   digitalWrite(LASER_PIN, LOW);
   BLEDevice::init("Gunslinger-ESP32");
@@ -53,9 +58,10 @@ void loop() {
   }
   const bool raw = digitalRead(TRIGGER_PIN);
   if (raw != lastRaw) { lastRaw = raw; changedAt = now; }
-  if (now - changedAt >= 20 && raw != stableButton) {
+  if (now - changedAt >= DEBOUNCE_MS && raw != stableButton) {
+    const bool triggerPulled = stableButton == HIGH && raw == LOW;
     stableButton = raw;
-    if (stableButton == LOW && !laserOn) {
+    if (triggerPulled && !laserOn) {
       digitalWrite(LASER_PIN, HIGH); // Laser is on BEFORE the notification.
       laserOn = true;
       laserStarted = now;
