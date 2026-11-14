@@ -84,9 +84,10 @@ Mock calibration is separate: `~/.config/gunslinger/mock.json`.
 
 ## Hardware target
 
-**Ubuntu Desktop 26.04 LTS, 64-bit**, on PC and Pi 5. Targets: Full HD output,
-640x360 game canvas, Compatibility/OpenGL rendering, 60 game FPS and 640x480/30
-camera FPS. Pi performance has not been measured. Other screen ratios letterbox.
+**Ubuntu Desktop 26.04 LTS, 64-bit** on PC and **Raspberry Pi OS** on Raspberry
+Pi 5. Targets: Full HD output, 640x360 game canvas, Compatibility/OpenGL
+rendering, 60 game FPS and 640x480/30 camera FPS. Pi performance has not been
+measured. Other screen ratios letterbox.
 
 Baseline camera: **Raspberry Pi Camera Module 3, standard visible-light version**,
 with a Pi 5 compatible camera cable. USB UVC webcams also work. Consider the Wide
@@ -106,9 +107,11 @@ Sources checked 2026-10-12:
 Picamera2 is in Ubuntu 26.04's universe archive. Older camera documentation still
 mentions a PPA; use the release's apt packages first.
 
-## Install on Ubuntu and autostart
+## Install on Linux and autostart
 
-Internet is needed for installation only:
+Internet is needed for installation only. These package names are for Ubuntu
+26.04 and Raspberry Pi OS based on Debian 13 (Trixie); other releases may use
+different names:
 
 ```sh
 sudo apt update
@@ -127,17 +130,19 @@ Existing `~/.config/gunslinger/bridge.json` is preserved. When switching hardwar
 pass the new backend explicitly to the installer; other settings are retained.
 For example, rerun `bash scripts/install-linux.sh opencv` for a USB webcam, then
 restart the game and recalibrate. Run `~/.local/bin/gunslinger` manually.
-Enable **automatic graphical login** in Ubuntu's user settings for boot-to-game.
+Enable **automatic graphical login** in the desktop settings for boot-to-game.
 The launcher starts fullscreen and runs/stops its bridge alongside the game.
 Logs: `~/.local/state/gunslinger/bridge.log`. Run as the logged-in user with camera
-and Bluetooth permissions, not as root.
+and Bluetooth permissions, not as root. See the [camera setup guide](docs/camera.md)
+for backend choices, examples, device selection and troubleshooting.
 
 ## Real gun and calibration
 
 1. Upload the ESP32 Arduino example, or implement [BLE protocol v1](docs/protocol.md)
    in your firmware. Adapt GPIO pins to the existing button/laser-driver circuit.
 2. Camera/BLE configuration is in `~/.config/gunslinger/bridge.json`. For manual
-   testing copy `bridge/config.example.json` there, or pass `--config FILE`.
+   testing, if that file does not exist, copy `bridge/config.example.json` there,
+   or pass `--config FILE`. Avoid overwriting an existing calibration.
 3. Use `camera.backend: picamera2` for CSI; `opencv` for USB. Discovery uses name
    `Gunslinger-ESP32`; set `ble.address` to target a specific gun.
 4. Manual bridge startup: `.venv/bin/python bridge/bridge.py --camera picamera2`.

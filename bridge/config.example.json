@@ -1,6 +1,22 @@
 {
-  "camera": {"backend": "opencv", "device": 0, "width": 640, "height": 480, "fps": 30},
-  "ble": {"name": "Gunslinger-ESP32", "address": "", "enabled": true},
-  "detector": {"min_red": 210, "min_red_excess": 55, "min_area": 3, "max_area": 450, "min_change": 25},
+  "camera": {
+    "backend": "opencv",
+    "device": 0,
+    "width": 640,
+    "height": 480,
+    "fps": 30
+  },
+  "ble": {
+    "name": "Gunslinger-ESP32",
+    "address": "",
+    "enabled": true
+  },
+  "detector": {
+    "min_red": 210,
+    "min_red_excess": 55,
+    "min_area": 3,
+    "max_area": 450,
+    "min_change": 25
+  },
   "corners": []
 }
