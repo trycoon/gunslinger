@@ -172,6 +172,7 @@ lens-distortion correction or hardware exposure/BLE clock synchronization.
 .venv/bin/python -m unittest discover -s tests -p 'test_*.py' -v
 .tools/godot --headless --path . --editor --import
 .tools/godot --headless --path . --script tests/bridge_disconnect.gd
+.tools/godot --headless --path . --script tests/menu_quit.gd
 .tools/godot --headless --path . --script tests/game_rules.gd
 .tools/godot --headless --path . --script tests/stages.gd
 ```

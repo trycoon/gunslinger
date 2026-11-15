@@ -69,6 +69,7 @@ var bridge_status := "Camera bridge offline"
 var bridge_last_seen := -100.0
 var bridge_connected := false
 var bridge_disconnect_dialog: AcceptDialog
+var quit_dialog: ConfirmationDialog
 var name_edit: LineEdit
 var audio_players: Dictionary = {}
 var rng := RandomNumberGenerator.new()
@@ -89,6 +90,13 @@ func _ready() -> void:
 	bridge_disconnect_dialog.title = "Bridge disconnected"
 	bridge_disconnect_dialog.dialog_text = "Connection to the camera bridge was lost. Check that the bridge is running."
 	add_child(bridge_disconnect_dialog)
+	quit_dialog = ConfirmationDialog.new()
+	quit_dialog.title = "Quit Gunslinger?"
+	quit_dialog.dialog_text = "Are you sure you want to quit?"
+	quit_dialog.ok_button_text = "QUIT"
+	quit_dialog.cancel_button_text = "CANCEL"
+	quit_dialog.confirmed.connect(func() -> void: get_tree().quit())
+	add_child(quit_dialog)
 	add_child(camera_request)
 	add_child(config_request)
 	camera_request.timeout = 1.0
@@ -253,7 +261,10 @@ func _show_menu() -> void:
 	ammo_button.disabled = input_mode == "Lightgun"
 	_button("CALIBRATION", Rect2(122, 294, 124, 26), _show_calibration)
 	_button("HIGHSCORES", Rect2(258, 294, 124, 26), _show_scores)
-	_button("QUIT", Rect2(394, 294, 124, 26), func() -> void: get_tree().quit())
+	_button("QUIT", Rect2(394, 294, 124, 26), _confirm_quit)
+
+func _confirm_quit() -> void:
+	quit_dialog.popup_centered()
 
 func _start_game() -> void:
 	_clear_ui()
