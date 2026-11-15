@@ -18,7 +18,7 @@ const BRIDGE_TIMEOUT := 3.0
 const BOSS_DUEL_SECONDS := 3.0
 const BOSS_STAGE_INTERVAL := 5
 const REACTION_REDUCTION_PER_STAGE := 0.03
-const MINIMUM_REACTION_MULTIPLIER := 0.7
+const MINIMUM_REACTION_MULTIPLIER := 0.6
 const BOSS_POSITION := Vector2(320, 270)
 const BOSS_VARIANT_COUNT := 3
 const BOSS_NAMES := [
@@ -123,7 +123,7 @@ func _ready() -> void:
 	_load_settings()
 	_load_scores()
 	if DisplayServer.get_name() != "headless":
-		for sound in ["shot", "shot-with-reload", "reload", "enemy", "civilian", "draw", "dont_shoot", "got_me"]:
+		for sound in ["shot", "shot-with-reload", "reload", "enemy", "civilian", "draw", "dont_shoot", "death1", "death2"]:
 			var player := AudioStreamPlayer.new()
 			var sound_path := "res://assets/audio/%s.wav" % sound
 			if not ResourceLoader.exists(sound_path):
@@ -575,6 +575,9 @@ func _sound(key: String) -> void:
 func _shot_sound() -> String:
 	return "shot-with-reload" if input_mode == "Mouse" and not magazine else "shot"
 
+func _death_sound() -> String:
+	return "death1" if rng.randi_range(0, 1) == 0 else "death2"
+
 func _shoot(point: Vector2, found: bool = true) -> void:
 	if state == "transition": return
 	if state == "boss":
@@ -627,7 +630,7 @@ func _shoot(point: Vector2, found: bool = true) -> void:
 				var bonus := roundi(100.0 * maxf(0.0, 1.0 - (elapsed - float(actor.born)) / float(actor.reaction)))
 				var earned := 100 + bonus + (75 if head.has_point(point) else 0)
 				score += earned
-				if rng.randf() < 0.3: _sound("got_me")
+				if rng.randf() < 0.3: _sound(_death_sound())
 				_notice(("HEADSHOT " if head.has_point(point) else "HIT ") + "+%d" % earned)
 				_check_stage_clear()
 			return
@@ -777,82 +780,45 @@ func _draw_hud() -> void:
 	_text("ESC pause   F11 fullscreen" + ("   Right click reload" if magazine else ""), Vector2(10, 352), 10, Color("dbc098"))
 
 func _boss_hitbox() -> Rect2:
-	return Rect2(BOSS_POSITION + Vector2(-46, -142), Vector2(92, 142))
-
-func _boss_pixel(x: int, y: int, width: int, height: int, color: Color) -> void:
-	draw_rect(Rect2(BOSS_POSITION + Vector2(x, y) * 2.0, Vector2(width, height) * 2.0), color)
+	return Rect2(BOSS_POSITION + Vector2(-24, -72), Vector2(48, 72))
 
 func _draw_boss() -> void:
-	var outline := Color("231b1c")
-	var leather := Color("5d3828")
-	var coat: Color = [Color("563b32"), Color("293947"), Color("5c3029")][boss_variant]
-	var coat_light: Color = [Color("815342"), Color("3d5862"), Color("85463b")][boss_variant]
+	var point := BOSS_POSITION
+	var coat: Color = [Color("613f32"), Color("2e4652"), Color("6a342d")][boss_variant]
+	var accent: Color = [Color("c34a37"), Color("91b0a7"), Color("e2bc50")][boss_variant]
 	var skin: Color = [Color("d89b6d"), Color("b97850"), Color("dca67a")][boss_variant]
-	var skin_shadow: Color = [Color("9d5a43"), Color("7d3f32"), Color("a9674a")][boss_variant]
-	var hat: Color = [Color("332329"), Color("20282b"), Color("6b442d")][boss_variant]
-	var hat_light: Color = [Color("70403a"), Color("45565a"), Color("b27040")][boss_variant]
-	var accent: Color = [Color("b83f32"), Color("8ba3a0"), Color("e2bc50")][boss_variant]
-	_boss_pixel(-28, 1, 56, 3, Color("72573f"))
-	_boss_pixel(-22, -7, 16, 7, outline)
-	_boss_pixel(6, -7, 16, 7, outline)
-	_boss_pixel(-20, -8, 13, 5, leather)
-	_boss_pixel(7, -8, 13, 5, leather)
-	_boss_pixel(-21, -32, 19, 25, outline)
-	_boss_pixel(2, -32, 19, 25, outline)
-	_boss_pixel(-19, -31, 16, 23, coat.darkened(0.18))
-	_boss_pixel(3, -31, 16, 23, coat)
-	_boss_pixel(-31, -42, 62, 19, outline)
-	_boss_pixel(-28, -43, 56, 23, coat)
-	_boss_pixel(-25, -40, 50, 4, coat_light)
-	_boss_pixel(-23, -35, 18, 12, coat_light.darkened(0.12))
-	_boss_pixel(5, -35, 18, 12, coat.darkened(0.22))
-	_boss_pixel(-4, -42, 8, 23, Color("292224"))
-	_boss_pixel(-2, -40, 4, 17, accent.darkened(0.12))
-	_boss_pixel(-36, -41, 9, 17, outline)
-	_boss_pixel(27, -41, 9, 17, outline)
-	_boss_pixel(-39, -38, 12, 12, coat)
-	_boss_pixel(27, -38, 12, 12, coat_light)
-	_boss_pixel(-46, -29, 13, 4, outline)
-	_boss_pixel(33, -29, 13, 4, outline)
-	_boss_pixel(-48, -28, 17, 2, Color("b6b9b4"))
-	_boss_pixel(31, -28, 17, 2, Color("b6b9b4"))
-	_boss_pixel(-34, -26, 4, 3, Color("dbc28b"))
-	_boss_pixel(30, -26, 4, 3, Color("dbc28b"))
-	_boss_pixel(-14, -58, 28, 17, outline)
-	_boss_pixel(-12, -60, 24, 20, skin_shadow)
-	_boss_pixel(-10, -59, 20, 17, skin)
-	_boss_pixel(-8, -54, 5, 2, Color("2a2020"))
-	_boss_pixel(3, -54, 5, 2, Color("2a2020"))
-	_boss_pixel(-7, -54, 2, 1, Color("f1d8a1"))
-	_boss_pixel(5, -54, 2, 1, Color("f1d8a1"))
-	_boss_pixel(-5, -48, 10, 2, skin_shadow.darkened(0.25))
-	_boss_pixel(-9, -44, 18, 3, outline)
-	_boss_pixel(-7, -44, 14, 2, Color("3b2523"))
+	var hat: Color = [Color("573326"), Color("27383e"), Color("6d452c")][boss_variant]
+	draw_rect(Rect2(point + Vector2(-28, 0), Vector2(56, 3)), Color("72573f"))
+	draw_rect(Rect2(point + Vector2(-18, -18), Vector2(36, 18)), Color("241d20"))
+	draw_rect(Rect2(point + Vector2(-16, -24), Vector2(32, 25)), coat)
+	draw_rect(Rect2(point + Vector2(-22, -21), Vector2(8, 17)), coat)
+	draw_rect(Rect2(point + Vector2(14, -21), Vector2(8, 17)), coat)
+	draw_rect(Rect2(point + Vector2(-4, -24), Vector2(8, 24)), accent)
+	draw_rect(Rect2(point + Vector2(-18, -44), Vector2(36, 24)), Color("241d20"))
+	draw_rect(Rect2(point + Vector2(-16, -46), Vector2(32, 25)), skin)
+	draw_rect(Rect2(point + Vector2(-14, -39), Vector2(8, 3)), Color("1d1b1d"))
+	draw_rect(Rect2(point + Vector2(6, -39), Vector2(8, 3)), Color("1d1b1d"))
+	draw_rect(Rect2(point + Vector2(-8, -31), Vector2(16, 3)), Color("59332b"))
 	match boss_variant:
 		0:
-			_boss_pixel(-22, -73, 44, 5, outline)
-			_boss_pixel(-18, -82, 36, 10, outline)
-			_boss_pixel(-15, -85, 30, 13, hat)
-			_boss_pixel(-20, -73, 40, 2, hat_light)
-			_boss_pixel(-16, -75, 32, 2, accent)
-			_boss_pixel(-12, -46, 24, 3, Color("3b2523"))
+			draw_rect(Rect2(point + Vector2(-22, -61), Vector2(44, 6)), hat)
+			draw_rect(Rect2(point + Vector2(-14, -72), Vector2(28, 13)), hat)
+			draw_rect(Rect2(point + Vector2(-16, -60), Vector2(32, 3)), accent)
 		1:
-			_boss_pixel(-19, -72, 38, 5, outline)
-			_boss_pixel(-13, -91, 26, 20, outline)
-			_boss_pixel(-10, -94, 20, 22, hat)
-			_boss_pixel(-11, -76, 22, 2, accent)
-			_boss_pixel(-10, -56, 7, 3, Color("1d1b1d"))
-			_boss_pixel(-11, -51, 22, 7, Color("382522"))
+			draw_rect(Rect2(point + Vector2(-19, -60), Vector2(38, 5)), hat)
+			draw_rect(Rect2(point + Vector2(-11, -76), Vector2(22, 18)), hat)
+			draw_rect(Rect2(point + Vector2(-11, -62), Vector2(22, 3)), accent)
+			draw_rect(Rect2(point + Vector2(-14, -41), Vector2(10, 5)), Color("1d1b1d"))
 		2:
-			_boss_pixel(-28, -75, 56, 5, outline)
-			_boss_pixel(-24, -78, 48, 5, hat)
-			_boss_pixel(-15, -88, 30, 13, outline)
-			_boss_pixel(-12, -90, 24, 14, hat)
-			_boss_pixel(-22, -77, 44, 2, hat_light)
-			_boss_pixel(-13, -74, 26, 3, accent)
-			_boss_pixel(-14, -44, 28, 3, accent.darkened(0.15))
+			draw_rect(Rect2(point + Vector2(-24, -62), Vector2(48, 6)), hat)
+			draw_rect(Rect2(point + Vector2(-13, -71), Vector2(26, 12)), hat)
+			draw_rect(Rect2(point + Vector2(-18, -61), Vector2(36, 3)), accent)
+			draw_rect(Rect2(point + Vector2(-14, -29), Vector2(28, 4)), accent)
+	draw_rect(Rect2(point + Vector2(-26, -14), Vector2(13, 3)), Color("b7b9b4"))
+	draw_rect(Rect2(point + Vector2(13, -14), Vector2(13, 3)), Color("b7b9b4"))
+	draw_rect(Rect2(point + Vector2(-24, -12), Vector2(4, 9)), Color("3e474b"))
+	draw_rect(Rect2(point + Vector2(20, -12), Vector2(4, 9)), Color("3e474b"))
 	_center(boss_name, 337, 16, Color("ffd080"))
-	_center(boss_name, 321, 16, Color("ffd080"))
 
 func _draw_backdrop() -> void:
 	draw_rect(Rect2(0, 0, 640, 360), Color("ddab72"))

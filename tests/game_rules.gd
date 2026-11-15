@@ -66,7 +66,7 @@ func _run() -> void:
 		game.stage = 2
 		check(is_equal_approx(game._reaction_time(), initial_reaction_times[level] * 0.97), "level %d reaction time shortens by 3 percent per stage" % level)
 		game.stage = 99
-		check(is_equal_approx(game._reaction_time(), initial_reaction_times[level] * 0.7), "level %d reaction time never drops below 70 percent" % level)
+		check(is_equal_approx(game._reaction_time(), initial_reaction_times[level] * 0.6), "level %d reaction time never drops below 60 percent" % level)
 		game.stage = 1
 		fresh()
 		for index in range(12): game._spawn_actor()
@@ -245,6 +245,10 @@ func _run() -> void:
 	game.magazine = true
 	check(game._shot_sound() == "shot", "mouse limited ammo keeps the normal shot sound")
 	game.magazine = false
+	var death_sounds: Dictionary = {}
+	for index in range(32):
+		death_sounds[game._death_sound()] = true
+	check(death_sounds.has("death1") and death_sounds.has("death2"), "bandit death sounds randomly select both recordings")
 	game.score = 1234
 	game._end_game()
 	game.name_edit.text = "test!"

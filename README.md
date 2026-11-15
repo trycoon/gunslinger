@@ -65,7 +65,7 @@ Starting difficulty settings:
 | Hard (previously Normal) | 4.3 seconds | 3 | 1.0–2.5 seconds | 3.0–5.0 seconds |
 
 Reaction times shorten by 3% of their starting value after each cleared stage,
-reaching a 70% floor at stage 11. Normal waits still shorten with active play,
+reaching a 60% floor at stage 15. Normal waits still shorten with active play,
 with a 0.8-second minimum, and the target limit increases. Long waits retain
 the ranges above throughout the run. A fresh random wait follows the second
 bandit in a pair. Single appearances still have a 23% chance of being a

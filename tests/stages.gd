@@ -183,6 +183,7 @@ func _run() -> void:
 	var first_boss_variant: int = game.boss_variant
 	check(first_boss_name in game.BOSS_NAMES, "boss shootdown uses a named outlaw from the boss roster")
 	check(first_boss_variant >= 0 and first_boss_variant < game.BOSS_VARIANT_COUNT, "boss shootdown uses a defined pixel-art variant")
+	check(game._boss_hitbox().size == Vector2(48, 72), "boss hitbox retains the one-and-a-half character scale")
 	var lives_before_boss: int = game.lives
 	game._shoot(game.BOSS_POSITION + Vector2(0, -60))
 	check(game.state == "transition" and game.lives == lives_before_boss + 1, "defeating the boss awards one life and starts the next stage transition")
