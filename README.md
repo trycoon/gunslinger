@@ -33,6 +33,9 @@ Mouse gameplay needs no Python packages, camera or Bluetooth.
 * Once all stage bandits have been defeated, the camera scrolls right into the
   next city block: a brief 0.8-second stage-clear display, then a 1.8-second pan.
   Shooting is disabled during the transition; Escape can pause/resume the pan.
+* Every fifth cleared stage becomes a three-second shootdown against a randomly
+  named outlaw boss with one of three detailed pixel-art outfits. Hit the boss
+  first for an extra life, or lose one life and advance to the next stage block.
 * Every block is generated procedurally with 3–4 buildings, varying facades,
   heights, signs, windows and doorways, plus 2–4 crates, barrels or wagons. Targets
   appear in positions derived from the generated cover, rather than fixed slots.
@@ -57,15 +60,17 @@ Starting difficulty settings:
 
 | Difficulty | Time before a bandit fires | Maximum simultaneous targets | Normal wait | Occasional long wait |
 | --- | --- | --- | --- | --- |
-| Easy | 5.2 seconds | 2 | 2.0–4.0 seconds | 4.5–7.5 seconds |
-| Medium (previously Easy) | 3.2 seconds | 2 | 1.5–3.2 seconds | 3.5–6.5 seconds |
-| Hard (previously Normal) | 2.3 seconds | 3 | 1.0–2.5 seconds | 3.0–5.0 seconds |
+| Easy | 7.2 seconds | 2 | 2.0–4.0 seconds | 4.5–7.5 seconds |
+| Medium (previously Easy) | 5.2 seconds | 2 | 1.5–3.2 seconds | 3.5–6.5 seconds |
+| Hard (previously Normal) | 4.3 seconds | 3 | 1.0–2.5 seconds | 3.0–5.0 seconds |
 
-Reaction times and normal waits shorten as the run progresses (normal waits have
-a 0.8-second minimum), and the target limit increases. Long waits retain the
-ranges above throughout the run. A fresh random wait follows the second bandit
-in a pair. Single appearances still have a 23% chance of being a civilian; pairs
-always contain two bandits. The 1.5-second post-kill pause stays in effect.
+Reaction times shorten by 3% of their starting value after each cleared stage,
+reaching a 70% floor at stage 11. Normal waits still shorten with active play,
+with a 0.8-second minimum, and the target limit increases. Long waits retain
+the ranges above throughout the run. A fresh random wait follows the second
+bandit in a pair. Single appearances still have a 23% chance of being a
+civilian; pairs always contain two bandits. The 1.5-second post-kill pause stays
+in effect.
 
 ## Simulated camera and lightgun
 

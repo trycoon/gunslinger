@@ -172,6 +172,32 @@ func _run() -> void:
 	check(game.state == "gameover", "timed mode ends normally after the next active-play tick")
 	game._start_game()
 	check(game.stage == 1 and game.stage_bandits_defeated == 0 and game.lives == 3 and game.score == 0, "a new run resets stage progression and run statistics")
+	# Every fifth stage ends in a boss shootdown instead of immediately scrolling onward.
+	game.stage = 5
+	game.stage_bandits_spawned = game.stage_bandits_total
+	game.stage_bandits_defeated = game.stage_bandits_total
+	game.actors.clear()
+	game._check_stage_clear()
+	check(game.state == "boss" and is_equal_approx(game.boss_time_left, game.BOSS_DUEL_SECONDS), "every fifth cleared stage starts a boss shootdown")
+	var first_boss_name: String = game.boss_name
+	var first_boss_variant: int = game.boss_variant
+	check(first_boss_name in game.BOSS_NAMES, "boss shootdown uses a named outlaw from the boss roster")
+	check(first_boss_variant >= 0 and first_boss_variant < game.BOSS_VARIANT_COUNT, "boss shootdown uses a defined pixel-art variant")
+	var lives_before_boss: int = game.lives
+	game._shoot(game.BOSS_POSITION + Vector2(0, -60))
+	check(game.state == "transition" and game.lives == lives_before_boss + 1, "defeating the boss awards one life and starts the next stage transition")
+	game._process(game.STAGE_CLEAR_HOLD + game.STAGE_SCROLL_DURATION)
+	check(game.state == "playing" and game.stage == 6, "boss victory advances to the next stage block")
+	game.stage = 10
+	game.stage_bandits_spawned = game.stage_bandits_total
+	game.stage_bandits_defeated = game.stage_bandits_total
+	game.actors.clear()
+	game._check_stage_clear()
+	lives_before_boss = game.lives
+	check(game.boss_name in game.BOSS_NAMES and game.boss_name != first_boss_name, "consecutive boss shootdowns use different outlaw names")
+	check(game.boss_variant != first_boss_variant, "consecutive boss shootdowns use different visual variants")
+	game._process(game.BOSS_DUEL_SECONDS)
+	check(game.state == "transition" and game.lives == lives_before_boss - 1, "timing out a boss shootdown costs one life and continues")
 
 	print("Stages and city: %d checks, %d failures" % [checks, failures])
 	await process_frame

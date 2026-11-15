@@ -47,7 +47,7 @@ func _run() -> void:
 	game.rng.seed = 104729
 
 	check(game.DIFFICULTIES == ["Easy", "Medium", "Hard"], "difficulty labels match the rebalanced levels")
-	var initial_reaction_times := [5.2, 3.2, 2.3]
+	var initial_reaction_times := [7.2, 5.2, 4.3]
 	var initial_target_limits := [2, 2, 3]
 	for level in range(3):
 		game.difficulty = level
@@ -63,6 +63,11 @@ func _run() -> void:
 		game.elapsed = deadline
 		game._tick_game(0.001)
 		check(game.lives == 2, "level %d fires when its deadline arrives" % level)
+		game.stage = 2
+		check(is_equal_approx(game._reaction_time(), initial_reaction_times[level] * 0.97), "level %d reaction time shortens by 3 percent per stage" % level)
+		game.stage = 99
+		check(is_equal_approx(game._reaction_time(), initial_reaction_times[level] * 0.7), "level %d reaction time never drops below 70 percent" % level)
+		game.stage = 1
 		fresh()
 		for index in range(12): game._spawn_actor()
 		check(game.actors.size() == initial_target_limits[level], "level %d uses the rebalanced target limit" % level)
@@ -222,6 +227,7 @@ func _run() -> void:
 	game.magazine = true
 	fresh()
 	check(not game.magazine, "lightgun forces infinite ammunition")
+	check(game._shot_sound() == "shot", "lightgun infinite ammo keeps the normal shot sound")
 	for index in range(12): game._shoot(Vector2.ZERO)
 	check(game.ammo == 6, "infinite ammunition stays available")
 
@@ -235,6 +241,10 @@ func _run() -> void:
 	game.mode = "Endless"
 	game.magazine = false
 	fresh()
+	check(game._shot_sound() == "shot-with-reload", "mouse infinite ammo uses the reload-accented shot sound")
+	game.magazine = true
+	check(game._shot_sound() == "shot", "mouse limited ammo keeps the normal shot sound")
+	game.magazine = false
 	game.score = 1234
 	game._end_game()
 	game.name_edit.text = "test!"

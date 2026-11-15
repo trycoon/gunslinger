@@ -15,10 +15,20 @@ const BANDIT_PAIR_GAP := Vector2(0.15, 0.35)
 const STAGE_CLEAR_HOLD := 0.8
 const STAGE_SCROLL_DURATION := 1.8
 const BRIDGE_TIMEOUT := 3.0
+const BOSS_DUEL_SECONDS := 3.0
+const BOSS_STAGE_INTERVAL := 5
+const REACTION_REDUCTION_PER_STAGE := 0.03
+const MINIMUM_REACTION_MULTIPLIER := 0.7
+const BOSS_POSITION := Vector2(320, 270)
+const BOSS_VARIANT_COUNT := 3
+const BOSS_NAMES := [
+	"BLACKJACK VANCE", "IRON EYE CROW", "SUNDOWN SLADE", "RATTLESNAKE REED",
+	"DEADWOOD DRAKE", "BLOODMOON BLAKE", "CINDER JACK", "GHOSTHAND GRIMM",
+]
 const RULES := [
-	{"max": 2, "reaction": 5.2, "wait": Vector2(2.0, 4.0), "long_wait": Vector2(4.5, 7.5)},
-	{"max": 2, "reaction": 3.2, "wait": Vector2(1.5, 3.2), "long_wait": Vector2(3.5, 6.5)},
-	{"max": 3, "reaction": 2.3, "wait": Vector2(1.0, 2.5), "long_wait": Vector2(3.0, 5.0)},
+	{"max": 2, "reaction": 7.2, "wait": Vector2(2.0, 4.0), "long_wait": Vector2(4.5, 7.5)},
+	{"max": 2, "reaction": 5.2, "wait": Vector2(1.5, 3.2), "long_wait": Vector2(3.5, 6.5)},
+	{"max": 3, "reaction": 4.3, "wait": Vector2(1.0, 2.5), "long_wait": Vector2(3.0, 5.0)},
 ]
 var slots: Array[Vector2] = []
 var town: Dictionary = {}
@@ -30,6 +40,9 @@ var stage_bandits_defeated := 0
 var transition_elapsed := 0.0
 var paused_state := "playing"
 var combat_started_at := 0.0
+var boss_time_left := 0.0
+var boss_name := ""
+var boss_variant := -1
 
 var state := "menu"
 var input_mode := "Mouse"
@@ -110,7 +123,7 @@ func _ready() -> void:
 	_load_settings()
 	_load_scores()
 	if DisplayServer.get_name() != "headless":
-		for sound in ["shot", "reload", "enemy", "civilian", "draw", "dont_shoot", "got_me"]:
+		for sound in ["shot", "shot-with-reload", "reload", "enemy", "civilian", "draw", "dont_shoot", "got_me"]:
 			var player := AudioStreamPlayer.new()
 			var sound_path := "res://assets/audio/%s.wav" % sound
 			if not ResourceLoader.exists(sound_path):
@@ -302,6 +315,12 @@ func _check_stage_clear() -> void:
 	if state != "playing" or stage_bandits_spawned < stage_bandits_total or stage_bandits_defeated < stage_bandits_total: return
 	for actor in actors:
 		if not actor.civilian: return
+	if stage % BOSS_STAGE_INTERVAL == 0:
+		_start_boss_duel()
+		return
+	_start_transition()
+
+func _start_transition() -> void:
 	state = "transition"
 	actors.clear()
 	shots.clear()
@@ -309,6 +328,33 @@ func _check_stage_clear() -> void:
 	transition_elapsed = 0.0
 	message_left = 0.0
 	next_town = StreetGenerator.generate(rng.randi())
+
+func _start_boss_duel() -> void:
+	state = "boss"
+	actors.clear()
+	shots.clear()
+	burst_timer = -1.0
+	boss_time_left = BOSS_DUEL_SECONDS
+	var names := BOSS_NAMES.filter(func(name: String) -> bool: return name != boss_name)
+	boss_name = names[rng.randi_range(0, names.size() - 1)]
+	var variants: Array[int] = []
+	for variant in range(BOSS_VARIANT_COUNT):
+		if variant != boss_variant:
+			variants.append(variant)
+	boss_variant = variants[rng.randi_range(0, variants.size() - 1)]
+	_notice(boss_name + ": DRAW!")
+	_sound("draw")
+
+func _win_boss_duel() -> void:
+	lives += 1
+	_notice(boss_name + " defeated! Extra life!")
+	_start_transition()
+
+func _lose_boss_duel() -> void:
+	_notice(boss_name + " wins! One life lost")
+	_damage()
+	if state != "gameover":
+		_start_transition()
 
 func _tick_transition(delta: float) -> void:
 	transition_elapsed += delta
@@ -411,7 +457,7 @@ func _process(delta: float) -> void:
 	_poll_input()
 	var now := Time.get_ticks_msec() / 1000.0
 	_check_bridge_connection(now)
-	Input.mouse_mode = Input.MOUSE_MODE_HIDDEN if state in ["playing", "transition"] and not bridge_disconnect_dialog.visible else Input.MOUSE_MODE_VISIBLE
+	Input.mouse_mode = Input.MOUSE_MODE_HIDDEN if state in ["playing", "boss", "transition"] and not bridge_disconnect_dialog.visible else Input.MOUSE_MODE_VISIBLE
 	message_left = maxf(0.0, message_left - delta)
 	damage_flash = maxf(0.0, damage_flash - delta)
 	muzzle_flash = maxf(0.0, muzzle_flash - delta)
@@ -428,6 +474,10 @@ func _process(delta: float) -> void:
 			_end_game()
 		else:
 			_tick_game(delta)
+	elif state == "boss":
+		boss_time_left = maxf(0.0, boss_time_left - delta)
+		if boss_time_left == 0.0:
+			_lose_boss_duel()
 	elif state == "transition":
 		_tick_transition(delta)
 	queue_redraw()
@@ -482,7 +532,9 @@ func _spawn_encounter() -> void:
 		spawn_timer = _next_spawn_delay()
 
 func _reaction_time() -> float:
-	return maxf(0.8, float(RULES[difficulty].reaction) / (1.0 + elapsed / 180.0))
+	var base: float = RULES[difficulty].reaction
+	var multiplier := maxf(MINIMUM_REACTION_MULTIPLIER, 1.0 - (stage - 1) * REACTION_REDUCTION_PER_STAGE)
+	return base * multiplier
 
 func _spawn_actor(force_bandit: bool = false) -> bool:
 	if state != "playing" or stage_bandits_spawned >= stage_bandits_total or actors.size() >= _maximum_targets(): return false
@@ -520,8 +572,26 @@ func _reload() -> void:
 func _sound(key: String) -> void:
 	if audio_players.has(key): audio_players[key].play()
 
+func _shot_sound() -> String:
+	return "shot-with-reload" if input_mode == "Mouse" and not magazine else "shot"
+
 func _shoot(point: Vector2, found: bool = true) -> void:
 	if state == "transition": return
+	if state == "boss":
+		if reload_left > 0.0: return
+		if magazine and ammo == 0:
+			_notice("Empty! Right click to reload")
+			return
+		if magazine: ammo -= 1
+		_sound(_shot_sound())
+		muzzle_flash = 0.07
+		if not found:
+			_notice("Miss: laser point not detected")
+			return
+		shots.append({"point": point, "ttl": 0.18})
+		if _boss_hitbox().has_point(point):
+			_win_boss_duel()
+		return
 	if state != "playing":
 		if found: _activate_button(point)
 		return
@@ -530,7 +600,7 @@ func _shoot(point: Vector2, found: bool = true) -> void:
 		_notice("Empty! Right click to reload")
 		return
 	if magazine: ammo -= 1
-	_sound("shot")
+	_sound(_shot_sound())
 	muzzle_flash = 0.07
 	if not found:
 		_notice("Miss: laser point not detected")
@@ -605,7 +675,7 @@ func _poll_input() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_ESCAPE:
-			if state in ["playing", "transition"]: _pause()
+			if state in ["playing", "boss", "transition"]: _pause()
 			elif state == "paused":
 				_resume_game()
 			else: _show_menu()
@@ -620,7 +690,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			if calibration_points.size() < 4:
 				calibration_points.append((event.position - PREVIEW.position) / PREVIEW.size)
 			return
-		if input_mode == "Mouse" and event.button_index == MOUSE_BUTTON_LEFT and state == "playing": _shoot(event.position)
+		if input_mode == "Mouse" and event.button_index == MOUSE_BUTTON_LEFT and state in ["playing", "boss"]: _shoot(event.position)
 		elif event.button_index == MOUSE_BUTTON_RIGHT: _reload()
 
 func _text(value: String, position: Vector2, size: int = 12, color: Color = Color("f6e6bf")) -> void:
@@ -639,18 +709,20 @@ func _draw() -> void:
 		_draw_town(next_town, SIZE.x - distance)
 	else:
 		_draw_town(town)
-		if state in ["playing", "paused", "gameover"]:
+		if state in ["playing", "boss", "paused", "gameover"]:
 			for actor in actors: _draw_actor(actor)
 			_draw_foreground(town)
-	if state in ["playing", "transition", "paused", "gameover"]:
+	if state in ["playing", "boss", "transition", "paused", "gameover"]:
 		_draw_hud()
-	if state == "playing":
+	if state in ["playing", "boss"]:
 		for shot in shots:
 			var point: Vector2 = shot.point
 			draw_line(point - Vector2(4, 4), point + Vector2(4, 4), Color("ffe8a0"), 2)
 			draw_line(point + Vector2(-4, 4), point + Vector2(4, -4), Color("ffe8a0"), 2)
 		if input_mode == "Mouse": _draw_crosshair(get_global_mouse_position())
 		if muzzle_flash > 0.0: draw_rect(Rect2(0, 340, 640, 20), Color(1.0, 0.85, 0.5, 0.3))
+		if state == "boss":
+			_draw_boss()
 	elif state == "transition":
 		draw_rect(Rect2(145, 137, 350, 68), Color(0.07, 0.06, 0.05, 0.90))
 		_center("STAGE %d CLEAR" % stage, 165, 25, Color("f2cc7a"))
@@ -690,14 +762,97 @@ func _draw_crosshair(point: Vector2) -> void:
 	draw_rect(Rect2(point - Vector2.ONE, Vector2(2, 2)), Color("fff3ce"))
 
 func _draw_hud() -> void:
-	draw_rect(Rect2(0, 0, 640, 50), Color("241e1b"))
+	draw_rect(Rect2(0, 0, 640, 48), Color("241e1b"))
 	_text("SCORE  %06d" % score, Vector2(12, 20), 14)
 	_text("LIVES  " + "* ".repeat(lives), Vector2(200, 20), 14, Color("f2cc7a"))
 	_text("RELOADING..." if reload_left > 0.0 else ("AMMO  %d/6" % ammo if magazine else "AMMO  INF"), Vector2(330, 20), 13)
 	_text("%02d:%02d" % [int(maxf(0, 90 - elapsed)) / 60, int(maxf(0, 90 - elapsed)) % 60] if mode == "Timed" else "ENDLESS", Vector2(534, 20), 13)
 	_text("STAGE %d    BANDITS %d / %d" % [stage, stage_bandits_defeated, stage_bandits_total], Vector2(12, 43), 11, Color("f2cc7a"))
 	_text(str(town.get("name", "")), Vector2(390, 43), 11, Color("cfb78f"))
+	if state == "boss":
+		var bar := Rect2(228, 53, 184, 6)
+		draw_rect(bar, Color("3b261e"))
+		draw_rect(Rect2(bar.position, Vector2(bar.size.x * boss_time_left / BOSS_DUEL_SECONDS, bar.size.y)), Color("d45735"))
+		_center(boss_name + " - DRAW!", 72, 12, Color("ffd080"))
 	_text("ESC pause   F11 fullscreen" + ("   Right click reload" if magazine else ""), Vector2(10, 352), 10, Color("dbc098"))
+
+func _boss_hitbox() -> Rect2:
+	return Rect2(BOSS_POSITION + Vector2(-46, -142), Vector2(92, 142))
+
+func _boss_pixel(x: int, y: int, width: int, height: int, color: Color) -> void:
+	draw_rect(Rect2(BOSS_POSITION + Vector2(x, y) * 2.0, Vector2(width, height) * 2.0), color)
+
+func _draw_boss() -> void:
+	var outline := Color("231b1c")
+	var leather := Color("5d3828")
+	var coat: Color = [Color("563b32"), Color("293947"), Color("5c3029")][boss_variant]
+	var coat_light: Color = [Color("815342"), Color("3d5862"), Color("85463b")][boss_variant]
+	var skin: Color = [Color("d89b6d"), Color("b97850"), Color("dca67a")][boss_variant]
+	var skin_shadow: Color = [Color("9d5a43"), Color("7d3f32"), Color("a9674a")][boss_variant]
+	var hat: Color = [Color("332329"), Color("20282b"), Color("6b442d")][boss_variant]
+	var hat_light: Color = [Color("70403a"), Color("45565a"), Color("b27040")][boss_variant]
+	var accent: Color = [Color("b83f32"), Color("8ba3a0"), Color("e2bc50")][boss_variant]
+	_boss_pixel(-28, 1, 56, 3, Color("72573f"))
+	_boss_pixel(-22, -7, 16, 7, outline)
+	_boss_pixel(6, -7, 16, 7, outline)
+	_boss_pixel(-20, -8, 13, 5, leather)
+	_boss_pixel(7, -8, 13, 5, leather)
+	_boss_pixel(-21, -32, 19, 25, outline)
+	_boss_pixel(2, -32, 19, 25, outline)
+	_boss_pixel(-19, -31, 16, 23, coat.darkened(0.18))
+	_boss_pixel(3, -31, 16, 23, coat)
+	_boss_pixel(-31, -42, 62, 19, outline)
+	_boss_pixel(-28, -43, 56, 23, coat)
+	_boss_pixel(-25, -40, 50, 4, coat_light)
+	_boss_pixel(-23, -35, 18, 12, coat_light.darkened(0.12))
+	_boss_pixel(5, -35, 18, 12, coat.darkened(0.22))
+	_boss_pixel(-4, -42, 8, 23, Color("292224"))
+	_boss_pixel(-2, -40, 4, 17, accent.darkened(0.12))
+	_boss_pixel(-36, -41, 9, 17, outline)
+	_boss_pixel(27, -41, 9, 17, outline)
+	_boss_pixel(-39, -38, 12, 12, coat)
+	_boss_pixel(27, -38, 12, 12, coat_light)
+	_boss_pixel(-46, -29, 13, 4, outline)
+	_boss_pixel(33, -29, 13, 4, outline)
+	_boss_pixel(-48, -28, 17, 2, Color("b6b9b4"))
+	_boss_pixel(31, -28, 17, 2, Color("b6b9b4"))
+	_boss_pixel(-34, -26, 4, 3, Color("dbc28b"))
+	_boss_pixel(30, -26, 4, 3, Color("dbc28b"))
+	_boss_pixel(-14, -58, 28, 17, outline)
+	_boss_pixel(-12, -60, 24, 20, skin_shadow)
+	_boss_pixel(-10, -59, 20, 17, skin)
+	_boss_pixel(-8, -54, 5, 2, Color("2a2020"))
+	_boss_pixel(3, -54, 5, 2, Color("2a2020"))
+	_boss_pixel(-7, -54, 2, 1, Color("f1d8a1"))
+	_boss_pixel(5, -54, 2, 1, Color("f1d8a1"))
+	_boss_pixel(-5, -48, 10, 2, skin_shadow.darkened(0.25))
+	_boss_pixel(-9, -44, 18, 3, outline)
+	_boss_pixel(-7, -44, 14, 2, Color("3b2523"))
+	match boss_variant:
+		0:
+			_boss_pixel(-22, -73, 44, 5, outline)
+			_boss_pixel(-18, -82, 36, 10, outline)
+			_boss_pixel(-15, -85, 30, 13, hat)
+			_boss_pixel(-20, -73, 40, 2, hat_light)
+			_boss_pixel(-16, -75, 32, 2, accent)
+			_boss_pixel(-12, -46, 24, 3, Color("3b2523"))
+		1:
+			_boss_pixel(-19, -72, 38, 5, outline)
+			_boss_pixel(-13, -91, 26, 20, outline)
+			_boss_pixel(-10, -94, 20, 22, hat)
+			_boss_pixel(-11, -76, 22, 2, accent)
+			_boss_pixel(-10, -56, 7, 3, Color("1d1b1d"))
+			_boss_pixel(-11, -51, 22, 7, Color("382522"))
+		2:
+			_boss_pixel(-28, -75, 56, 5, outline)
+			_boss_pixel(-24, -78, 48, 5, hat)
+			_boss_pixel(-15, -88, 30, 13, outline)
+			_boss_pixel(-12, -90, 24, 14, hat)
+			_boss_pixel(-22, -77, 44, 2, hat_light)
+			_boss_pixel(-13, -74, 26, 3, accent)
+			_boss_pixel(-14, -44, 28, 3, accent.darkened(0.15))
+	_center(boss_name, 337, 16, Color("ffd080"))
+	_center(boss_name, 321, 16, Color("ffd080"))
 
 func _draw_backdrop() -> void:
 	draw_rect(Rect2(0, 0, 640, 360), Color("ddab72"))
@@ -790,8 +945,8 @@ func _draw_actor(actor: Dictionary) -> void:
 			actor.appearance = BanditAppearance.generate(hash("%s:%s:%s" % [town.seed, actor.slot, actor.born]))
 		BanditAppearance.draw(self, point, actor.appearance)
 		var remaining := clampf((float(actor.next_shot) - elapsed) / float(actor.reaction), 0, 1)
-		draw_rect(Rect2(point + Vector2(-13, -47), Vector2(26, 3)), Color("342e2b"))
-		draw_rect(Rect2(point + Vector2(-13, -47), Vector2(26 * remaining, 3)), Color("f2cc7a"))
+		draw_rect(Rect2(point + Vector2(-9, -44), Vector2(18, 3)), Color("342e2b"))
+		draw_rect(Rect2(point + Vector2(-9, -44), Vector2(18 * remaining, 3)), Color("f2cc7a"))
 		if elapsed < float(actor.flash_until):
 			draw_colored_polygon(PackedVector2Array([point + Vector2(23, -15), point + Vector2(34, -11), point + Vector2(23, -7)]), Color("fff4b9"))
 
