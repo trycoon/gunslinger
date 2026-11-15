@@ -36,6 +36,9 @@ Mouse gameplay needs no Python packages, camera or Bluetooth.
 * Every fifth cleared stage becomes a three-second shootdown against a randomly
   named outlaw boss with one of three detailed pixel-art outfits. Hit the boss
   first for an extra life, or lose one life and advance to the next stage block.
+* Each stage includes 2–4 wine bottles placed around the street, on roofs, or
+  on barrels. Shooting a bottle breaks it with a glass sound but gives no score
+  or gameplay advantage.
 * Every block is generated procedurally with 3–4 buildings, varying facades,
   heights, signs, windows and doorways, plus 2–4 crates, barrels or wagons. Targets
   appear in positions derived from the generated cover, rather than fixed slots.

@@ -21,6 +21,7 @@ const REACTION_REDUCTION_PER_STAGE := 0.03
 const MINIMUM_REACTION_MULTIPLIER := 0.6
 const BOSS_POSITION := Vector2(320, 270)
 const BOSS_VARIANT_COUNT := 3
+const BOTTLE_COUNT := Vector2i(2, 4)
 const BOSS_NAMES := [
 	"BLACKJACK VANCE", "IRON EYE CROW", "SUNDOWN SLADE", "RATTLESNAKE REED",
 	"DEADWOOD DRAKE", "BLOODMOON BLAKE", "CINDER JACK", "GHOSTHAND GRIMM",
@@ -43,6 +44,7 @@ var combat_started_at := 0.0
 var boss_time_left := 0.0
 var boss_name := ""
 var boss_variant := -1
+var bottles: Array[Dictionary] = []
 
 var state := "menu"
 var input_mode := "Mouse"
@@ -123,7 +125,7 @@ func _ready() -> void:
 	_load_settings()
 	_load_scores()
 	if DisplayServer.get_name() != "headless":
-		for sound in ["shot", "shot-with-reload", "reload", "enemy", "civilian", "draw", "dont_shoot", "death1", "death2"]:
+		for sound in ["shot", "shot-with-reload", "reload", "enemy", "civilian", "draw", "dont_shoot", "death1", "death2", "glass"]:
 			var player := AudioStreamPlayer.new()
 			var sound_path := "res://assets/audio/%s.wav" % sound
 			if not ResourceLoader.exists(sound_path):
@@ -305,11 +307,48 @@ func _begin_stage(layout: Dictionary) -> void:
 	stage_bandits_defeated = 0
 	actors.clear()
 	shots.clear()
+	bottles = _place_bottles(layout)
 	spawn_timer = _next_spawn_delay()
 	burst_timer = -1.0
 	transition_elapsed = 0.0
 	combat_started_at = Time.get_unix_time_from_system()
 	state = "playing"
+
+func _place_bottles(layout: Dictionary) -> Array[Dictionary]:
+	var random := RandomNumberGenerator.new()
+	random.seed = int(layout.seed) ^ 0xB0771E
+	var candidates: Array[Dictionary] = []
+	for index in range(12):
+		candidates.append({"position": Vector2(random.randi_range(28, 612), random.randi_range(274, 326)), "surface": "ground"})
+	for building in layout.buildings:
+		var rect: Rect2 = building.rect
+		candidates.append({"position": Vector2(random.randi_range(int(rect.position.x + 14), int(rect.end.x - 14)), rect.position.y), "surface": "roof"})
+	for obstacle in layout.obstacles:
+		if obstacle.kind == 1:
+			var offset := -9 if random.randf() < 0.5 else 9
+			candidates.append({"position": obstacle.position + Vector2(offset, 0), "surface": "barrel"})
+	var result: Array[Dictionary] = []
+	var desired := random.randi_range(BOTTLE_COUNT.x, BOTTLE_COUNT.y)
+	for attempt in range(64):
+		if result.size() == desired:
+			break
+		if candidates.is_empty():
+			break
+		var candidate: Dictionary = candidates.pop_at(random.randi_range(0, candidates.size() - 1))
+		var position: Vector2 = candidate.position
+		var clear := true
+		if candidate.surface != "barrel":
+			for slot in layout.slots:
+				if position.distance_to(slot) < 30.0:
+					clear = false
+					break
+		for bottle in result:
+			if position.distance_to(bottle.position) < 24.0:
+				clear = false
+				break
+		if clear:
+			result.append(candidate)
+	return result
 
 func _check_stage_clear() -> void:
 	if state != "playing" or stage_bandits_spawned < stage_bandits_total or stage_bandits_defeated < stage_bandits_total: return
@@ -634,6 +673,11 @@ func _shoot(point: Vector2, found: bool = true) -> void:
 				_notice(("HEADSHOT " if head.has_point(point) else "HIT ") + "+%d" % earned)
 				_check_stage_clear()
 			return
+	for index in range(bottles.size() - 1, -1, -1):
+		if _bottle_hitbox(bottles[index].position).has_point(point):
+			bottles.remove_at(index)
+			_sound("glass")
+			return
 
 func _activate_button(point: Vector2) -> void:
 	for item in buttons.duplicate():
@@ -713,6 +757,9 @@ func _draw() -> void:
 	else:
 		_draw_town(town)
 		if state in ["playing", "boss", "paused", "gameover"]:
+			for bottle in bottles:
+				_draw_bottle(bottle.position)
+		if state in ["playing", "boss", "paused", "gameover"]:
 			for actor in actors: _draw_actor(actor)
 			_draw_foreground(town)
 	if state in ["playing", "boss", "transition", "paused", "gameover"]:
@@ -778,6 +825,20 @@ func _draw_hud() -> void:
 		draw_rect(Rect2(bar.position, Vector2(bar.size.x * boss_time_left / BOSS_DUEL_SECONDS, bar.size.y)), Color("d45735"))
 		_center(boss_name + " - DRAW!", 72, 12, Color("ffd080"))
 	_text("ESC pause   F11 fullscreen" + ("   Right click reload" if magazine else ""), Vector2(10, 352), 10, Color("dbc098"))
+
+func _bottle_hitbox(position: Vector2) -> Rect2:
+	return Rect2(position + Vector2(-4, -18), Vector2(8, 18))
+
+func _draw_bottle(position: Vector2) -> void:
+	var glass := Color("365e4e")
+	var glass_light := Color("8fc59d")
+	draw_rect(Rect2(position + Vector2(-4, -1), Vector2(8, 2)), Color("5b4938"))
+	draw_rect(Rect2(position + Vector2(-4, -9), Vector2(8, 7)), glass)
+	draw_rect(Rect2(position + Vector2(-3, -12), Vector2(6, 4)), glass)
+	draw_rect(Rect2(position + Vector2(-2, -17), Vector2(4, 6)), glass)
+	draw_rect(Rect2(position + Vector2(-3, -19), Vector2(6, 2)), Color("c2d7ac"))
+	draw_rect(Rect2(position + Vector2(-3, -8), Vector2(1, 5)), glass_light)
+	draw_rect(Rect2(position + Vector2(-1, -16), Vector2(1, 4)), glass_light)
 
 func _boss_hitbox() -> Rect2:
 	return Rect2(BOSS_POSITION + Vector2(-24, -72), Vector2(48, 72))

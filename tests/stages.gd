@@ -76,6 +76,19 @@ func _run() -> void:
 		quotas[game.stage_bandits_total] = true
 		quota_bounds_valid = quota_bounds_valid and game.stage_bandits_total >= 8 and game.stage_bandits_total <= 12
 	check(quota_bounds_valid and quotas.size() == 5, "stage quotas randomly cover every total from 8 through 12")
+	var first_bottles: Array[Dictionary] = []
+	first_bottles.assign(game.bottles)
+	check(first_bottles.size() >= game.BOTTLE_COUNT.x and first_bottles.size() <= game.BOTTLE_COUNT.y, "each stage places a small random bottle set")
+	check(first_bottles == game._place_bottles(game.town), "bottle placement is stable for a generated street")
+	var bottle_surfaces: Dictionary = {}
+	for seed_value in range(64):
+		for bottle in game._place_bottles(Generator.generate(seed_value)):
+			bottle_surfaces[bottle.surface] = true
+	check(bottle_surfaces.has("ground") and bottle_surfaces.has("roof") and bottle_surfaces.has("barrel"), "bottle placement includes ground, roof, and barrel surfaces")
+	var score_before_bottle: int = game.score
+	var bottles_before: int = game.bottles.size()
+	game._shoot(game.bottles[0].position + Vector2(0, -9))
+	check(game.bottles.size() == bottles_before - 1 and game.score == score_before_bottle, "shooting a bottle removes it without awarding score")
 	var found_civilian := false
 	for seed_value in range(128):
 		game._start_game()
