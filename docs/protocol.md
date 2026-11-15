@@ -34,6 +34,13 @@ reconnection. It only enters deep sleep when the trigger has returned low, so a
 held trigger cannot cause an immediate wake loop. No desktop Bluetooth pairing
 is needed.
 
+### Serial diagnostics
+
+The firmware logs boot and wake information, BLE connection and advertising
+changes, shots, laser shutoff, and entry into deep sleep at 115200 baud. From
+`firmware/esp32_gunslinger`, run `pio device monitor` to follow the messages.
+A notification being requested does not confirm that the bridge received it.
+
 ### Trigger wiring
 
 Use the ESP32's 3.3 V rail, not 5 V, for the trigger input. The firmware enables
@@ -101,5 +108,4 @@ Calibration POST: `{"corners":[[0,0],[1,0],[1,1],[0,1]]}`.
 
 Arduino example: `firmware/esp32_gunslinger/esp32_gunslinger.ino`. Adapt pins to
 your existing button/laser-driver circuit and compile with the ESP32 Arduino
-board support package. No firmware compilation or hardware BLE test has been
-performed without the board/toolchain.
+board support package. Hardware BLE behavior still requires testing on a board.

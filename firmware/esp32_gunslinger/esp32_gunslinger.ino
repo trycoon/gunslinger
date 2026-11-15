@@ -28,14 +28,21 @@ unsigned long lastFiredAt = 0;
 bool wakeShotPending = false;
 
 class ServerCallbacks : public BLEServerCallbacks {
-  void onConnect(BLEServer*) override { connected = true; }
+  void onConnect(BLEServer*) override {
+    connected = true;
+    Serial.println("[BLE] Client connected");
+  }
   void onDisconnect(BLEServer*) override {
     connected = false;
     advertiseAgain = true;
+    Serial.println("[BLE] Client disconnected");
   }
 };
 
 void setup() {
+  Serial.begin(115200);
+  const esp_sleep_wakeup_cause_t wakeupCause = esp_sleep_get_wakeup_cause();
+  Serial.printf("\n[BOOT] Starting; wakeup cause: %d\n", static_cast<int>(wakeupCause));
   pinMode(TRIGGER_PIN, INPUT_PULLDOWN);
   lastRaw = digitalRead(TRIGGER_PIN);
   stableButton = lastRaw;
@@ -53,9 +60,12 @@ void setup() {
   advertising->addServiceUUID(SERVICE_UUID);
   advertising->setScanResponse(true);
   BLEDevice::startAdvertising();
+  Serial.println("[BLE] Advertising as Gunslinger-ESP32");
   lastFiredAt = millis();
-  wakeShotPending = esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT0 &&
-                    digitalRead(TRIGGER_PIN) == HIGH;
+  wakeShotPending = wakeupCause == ESP_SLEEP_WAKEUP_EXT0 && digitalRead(TRIGGER_PIN) == HIGH;
+  if (wakeShotPending) {
+    Serial.println("[TRIGGER] Wake shot pending BLE connection");
+  }
 }
 
 void fire(unsigned long now) {
@@ -70,11 +80,18 @@ void fire(unsigned long now) {
   if (connected) {
     triggerCharacteristic->setValue(packet, sizeof(packet));
     triggerCharacteristic->notify();
+    Serial.printf("[SHOT] Sequence %lu; laser on, BLE notification requested\n",
+                  static_cast<unsigned long>(sequence));
+  } else {
+    Serial.printf("[SHOT] Sequence %lu; laser on, no BLE client connected\n",
+                  static_cast<unsigned long>(sequence));
   }
 }
 
 void sleepUntilTrigger() {
   digitalWrite(LASER_PIN, LOW);
+  Serial.println("[SLEEP] Idle timeout; entering deep sleep until trigger");
+  Serial.flush();
   rtc_gpio_pullup_dis(static_cast<gpio_num_t>(TRIGGER_PIN));
   rtc_gpio_pulldown_en(static_cast<gpio_num_t>(TRIGGER_PIN));
   esp_sleep_enable_ext0_wakeup(static_cast<gpio_num_t>(TRIGGER_PIN), HIGH);
@@ -86,10 +103,12 @@ void loop() {
   if (advertiseAgain) {
     advertiseAgain = false;
     BLEDevice::startAdvertising();
+    Serial.println("[BLE] Advertising restarted");
   }
   // The press that woke the ESP32 occurred before BLE could reconnect.
   if (wakeShotPending && connected && !laserOn) {
     wakeShotPending = false;
+    Serial.println("[TRIGGER] Firing pending wake shot");
     fire(now);
   }
   const bool raw = digitalRead(TRIGGER_PIN);
@@ -104,6 +123,7 @@ void loop() {
   if (laserOn && now - laserStarted >= LASER_MS) {
     digitalWrite(LASER_PIN, LOW);
     laserOn = false;
+    Serial.println("[LASER] Off");
   }
   if (!wakeShotPending && !laserOn && raw == LOW && now - lastFiredAt >= IDLE_SLEEP_MS) {
     sleepUntilTrigger();

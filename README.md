@@ -135,6 +135,9 @@ The launcher starts fullscreen and runs/stops its bridge alongside the game.
 Logs: `~/.local/state/gunslinger/bridge.log`. Run as the logged-in user with camera
 and Bluetooth permissions, not as root. See the [camera setup guide](docs/camera.md)
 for backend choices, examples, device selection and troubleshooting.
+If the game stops receiving status updates from a connected bridge for more than
+three seconds, it displays a disconnect dialog. The dialog closes automatically
+when updates resume; game time continues while it is displayed.
 
 ## Real gun and calibration
 
@@ -166,6 +169,7 @@ lens-distortion correction or hardware exposure/BLE clock synchronization.
 ```sh
 .venv/bin/python -m unittest discover -s tests -p 'test_*.py' -v
 .tools/godot --headless --path . --editor --import
+.tools/godot --headless --path . --script tests/bridge_disconnect.gd
 .tools/godot --headless --path . --script tests/game_rules.gd
 .tools/godot --headless --path . --script tests/stages.gd
 ```

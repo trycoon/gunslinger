@@ -14,6 +14,7 @@ const BANDIT_PAIR_CHANCE := 0.18
 const BANDIT_PAIR_GAP := Vector2(0.15, 0.35)
 const STAGE_CLEAR_HOLD := 0.8
 const STAGE_SCROLL_DURATION := 1.8
+const BRIDGE_TIMEOUT := 3.0
 const RULES := [
 	{"max": 2, "reaction": 5.2, "wait": Vector2(2.0, 4.0), "long_wait": Vector2(4.5, 7.5)},
 	{"max": 2, "reaction": 3.2, "wait": Vector2(1.5, 3.2), "long_wait": Vector2(3.5, 6.5)},
@@ -66,6 +67,8 @@ var calibration_saved := false
 var calibration_post_pending := false
 var bridge_status := "Camera bridge offline"
 var bridge_last_seen := -100.0
+var bridge_connected := false
+var bridge_disconnect_dialog: AcceptDialog
 var name_edit: LineEdit
 var audio_players: Dictionary = {}
 var rng := RandomNumberGenerator.new()
@@ -82,6 +85,10 @@ func _ready() -> void:
 	ui.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	ui.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(ui)
+	bridge_disconnect_dialog = AcceptDialog.new()
+	bridge_disconnect_dialog.title = "Bridge disconnected"
+	bridge_disconnect_dialog.dialog_text = "Connection to the camera bridge was lost. Check that the bridge is running."
+	add_child(bridge_disconnect_dialog)
 	add_child(camera_request)
 	add_child(config_request)
 	camera_request.timeout = 1.0
@@ -389,8 +396,8 @@ func _camera_received(_result: int, code: int, _headers: PackedStringArray, body
 func _process(delta: float) -> void:
 	_poll_input()
 	var now := Time.get_ticks_msec() / 1000.0
-	if now - bridge_last_seen > 3.0: bridge_status = "Camera bridge offline"
-	Input.mouse_mode = Input.MOUSE_MODE_HIDDEN if state in ["playing", "transition"] else Input.MOUSE_MODE_VISIBLE
+	_check_bridge_connection(now)
+	Input.mouse_mode = Input.MOUSE_MODE_HIDDEN if state in ["playing", "transition"] and not bridge_disconnect_dialog.visible else Input.MOUSE_MODE_VISIBLE
 	message_left = maxf(0.0, message_left - delta)
 	damage_flash = maxf(0.0, damage_flash - delta)
 	muzzle_flash = maxf(0.0, muzzle_flash - delta)
@@ -548,13 +555,27 @@ func _activate_button(point: Vector2) -> void:
 			item.action.call()
 			return
 
+func _check_bridge_connection(now: float) -> void:
+	if now - bridge_last_seen <= BRIDGE_TIMEOUT:
+		return
+	bridge_status = "Camera bridge offline"
+	if bridge_connected:
+		bridge_connected = false
+		bridge_disconnect_dialog.popup_centered()
+
+func _bridge_status_received(status: String, now: float) -> void:
+	bridge_last_seen = now
+	bridge_status = status
+	bridge_connected = true
+	if bridge_disconnect_dialog.visible:
+		bridge_disconnect_dialog.hide()
+
 func _poll_input() -> void:
 	while udp.get_available_packet_count() > 0:
 		var data: Variant = JSON.parse_string(udp.get_packet().get_string_from_utf8())
 		if not data is Dictionary: continue
 		if data.get("type") == "status":
-			bridge_last_seen = Time.get_ticks_msec() / 1000.0
-			bridge_status = str(data.get("message", "Camera bridge connected"))
+			_bridge_status_received(str(data.get("message", "Camera bridge connected")), Time.get_ticks_msec() / 1000.0)
 		elif data.get("type") == "shot" and input_mode == "Lightgun" and state != "calibration":
 			var identifier := str(data.get("id", ""))
 			var age := Time.get_unix_time_from_system() - float(data.get("fired_at", 0.0))
