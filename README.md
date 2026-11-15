@@ -138,6 +138,8 @@ for backend choices, examples, device selection and troubleshooting.
 If the game stops receiving status updates from a connected bridge for more than
 three seconds, it displays a disconnect dialog. The dialog closes automatically
 when updates resume; game time continues while it is displayed.
+The calibration camera preview updates in place, retaining the last frame while
+the next frame is requested.
 
 ## Real gun and calibration
 

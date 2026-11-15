@@ -26,6 +26,9 @@ func _run() -> void:
 	root.add_child(game)
 	game._show_calibration()
 	verify(await wait_for(func() -> bool: return game.camera_texture != null), "camera preview reaches calibration menu")
+	var initial_preview: ImageTexture = game.camera_texture
+	await create_timer(.2).timeout
+	verify(game.camera_texture == initial_preview, "camera preview texture is updated in place")
 	# Simulate clicking the preview at known mock projector corners.
 	for point in [Vector2(.08,.12), Vector2(.91,.08), Vector2(.94,.88), Vector2(.06,.93)]:
 		var click := InputEventMouseButton.new()

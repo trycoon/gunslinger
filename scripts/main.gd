@@ -390,7 +390,10 @@ func _camera_received(_result: int, code: int, _headers: PackedStringArray, body
 		return
 	var image := Image.new()
 	if image.load_jpg_from_buffer(body) == OK:
-		camera_texture = ImageTexture.create_from_image(image)
+		if camera_texture and camera_texture.get_width() == image.get_width() and camera_texture.get_height() == image.get_height():
+			camera_texture.update(image)
+		else:
+			camera_texture = ImageTexture.create_from_image(image)
 		preview_error = ""
 
 func _process(delta: float) -> void:
