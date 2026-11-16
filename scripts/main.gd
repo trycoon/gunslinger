@@ -176,8 +176,8 @@ func _load_scores() -> void:
 				continue
 			var valid: Array = []
 			for entry in parsed[key]:
-				if entry is Dictionary and entry.get("name") is String and entry.get("score") is float:
-					valid.append({"name": _clean_name(entry.name), "score": maxi(0, int(entry.score))})
+				if entry is Dictionary and entry.get("name") is String and entry.get("score") is int:
+					valid.append({"name": _clean_name(entry.name), "score": maxi(0, entry.score)})
 			valid.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.score > b.score)
 			highscores[str(key)] = valid.slice(0, 10)
 
@@ -612,7 +612,7 @@ func _sound(key: String) -> void:
 	if audio_players.has(key): audio_players[key].play()
 
 func _shot_sound() -> String:
-	return "shot-with-reload" if input_mode == "Mouse" and not magazine else "shot"
+	return "shot-with-reload" if input_mode == "Mouse" and magazine else "shot"
 
 func _death_sound() -> String:
 	return "death1" if rng.randi_range(0, 1) == 0 else "death2"
