@@ -273,6 +273,9 @@ class Bridge:
                     self.reply(200, preview, "image/jpeg")
                 elif self.path == "/detector/settings":
                     self.reply(200, {"detector": bridge.config.get("detector", {})})
+                elif self.path == "/camera/exposure":
+                    exposure = bridge.camera.get_exposure()
+                    self.reply(200, {"exposure_us": exposure} if exposure is not None else {"error": "Exposure control not supported"})
                 elif self.path == "/status":
                     self.reply(200, {"message": bridge.status_message(), "calibrated": bridge.mapper is not None})
                 else:
@@ -300,6 +303,21 @@ class Bridge:
                         self.reply(400, {"error": str(exc)})
                     except OSError as exc:
                         self.reply(500, {"error": f"Could not save settings: {exc}"})
+                elif self.path == "/camera/exposure":
+                    try:
+                        size = int(self.headers.get("Content-Length", "0"))
+                        if not 0 < size < 512:
+                            raise ValueError("Invalid exposure payload size")
+                        body = json.loads(self.rfile.read(size))
+                        exposure_us = int(body.get("exposure_us", 5000))
+                        if not 100 <= exposure_us <= 100000:
+                            raise ValueError("Exposure must be 100-100000 microseconds")
+                        if bridge.camera.set_exposure(exposure_us):
+                            self.reply(200, {"exposure_us": exposure_us})
+                        else:
+                            self.reply(400, {"error": "Camera does not support exposure control"})
+                    except (ValueError, KeyError, TypeError) as exc:
+                        self.reply(400, {"error": str(exc)})
                 else:
                     self.reply(404, {"error": "Unknown endpoint"})
         self.http = ThreadingHTTPServer(("127.0.0.1", 4244), Handler)

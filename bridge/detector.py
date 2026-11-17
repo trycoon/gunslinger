@@ -46,7 +46,7 @@ def detect(frame, background=None, settings=None, mapper=None):
                "max_area": 450, "min_change": 25}
     options.update(settings or {})
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    red_mask = cv2.inRange(hsv, (0, 90, 0), (12, 255, 255)) | cv2.inRange(hsv, (168, 90, 0), (179, 255, 255))
+    red_mask = cv2.inRange(hsv, (0, 40, 0), (12, 255, 255)) | cv2.inRange(hsv, (168, 40, 0), (179, 255, 255))
     blue, green, red = [channel.astype(np.int16) for channel in cv2.split(frame)]
     excess = red - np.maximum(blue, green)
     mask = (red_mask > 0) & (red >= options["min_red"]) & (excess >= options["min_red_excess"])

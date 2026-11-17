@@ -95,6 +95,8 @@ var seen_shots: Array[String] = []
 var detector_settings: Dictionary = {"min_red": 210, "min_red_excess": 55}
 var detector_settings_pending := false
 var show_detection_preview := false
+var camera_exposure_us := 5000
+var camera_exposure_pending := false
 
 func _ready() -> void:
 	Engine.max_fps = 60
@@ -483,22 +485,33 @@ func _show_calibration() -> void:
 		detector_settings["min_red_excess"] = min(255, detector_settings.get("min_red_excess", 55) + 5)
 		_save_detector_settings())
 	
+	# Camera exposure section
+	_text("3. CAMERA EXPOSURE", Vector2(375, 185), 12, Color.LIGHT_GRAY)
+	_text("Exposure (µs):", Vector2(375, 208), 10, Color.GRAY)
+	_text(str(camera_exposure_us), Vector2(450, 208), 10, Color.WHITE)
+	_button("-", Rect2(470, 205, 14, 12), func() -> void:
+		camera_exposure_us = max(100, camera_exposure_us - 1000)
+		_save_camera_exposure())
+	_button("+", Rect2(488, 205, 14, 12), func() -> void:
+		camera_exposure_us = min(100000, camera_exposure_us + 1000)
+		_save_camera_exposure())
+	
 	# Preview toggle and status
-	_button("PREVIEW", Rect2(375, 185, 70, 16), func() -> void:
+	_button("PREVIEW", Rect2(375, 235, 70, 16), func() -> void:
 		show_detection_preview = not show_detection_preview)
 	var preview_status = "ON" if show_detection_preview else "OFF"
-	_text(preview_status, Vector2(455, 187), 10, Color.YELLOW if show_detection_preview else Color.GRAY)
+	_text(preview_status, Vector2(455, 237), 10, Color.YELLOW if show_detection_preview else Color.GRAY)
 	
 	# Status line
 	var status_text := "SAVED" if calibration_saved else "Not saved"
-	_text(status_text, Vector2(375, 210), 10, Color.GREEN if calibration_saved else Color.GRAY)
+	_text(status_text, Vector2(375, 258), 10, Color.GREEN if calibration_saved else Color.GRAY)
 	
 	# Bottom action buttons - stacked vertically with big spacing
-	_button("RESET", Rect2(375, 240, 110, 18), func() -> void:
+	_button("RESET", Rect2(375, 285, 110, 18), func() -> void:
 		calibration_points.clear()
 		calibration_saved = false)
-	_button("SAVE", Rect2(375, 268, 110, 18), _save_calibration)
-	_button("BACK", Rect2(375, 296, 110, 18), _show_menu)
+	_button("SAVE", Rect2(375, 309, 110, 18), _save_calibration)
+	_button("BACK", Rect2(375, 333, 110, 18), _show_menu)
 
 func _save_detector_settings() -> void:
 	var err := config_request.request(
@@ -508,6 +521,15 @@ func _save_detector_settings() -> void:
 		JSON.stringify(detector_settings)
 	)
 	detector_settings_pending = err == OK
+
+func _save_camera_exposure() -> void:
+	var err := config_request.request(
+		"http://127.0.0.1:4244/camera/exposure",
+		PackedStringArray(["Content-Type: application/json"]),
+		HTTPClient.METHOD_POST,
+		JSON.stringify({"exposure_us": camera_exposure_us})
+	)
+	camera_exposure_pending = err == OK
 
 func _save_calibration() -> void:
 	if calibration_points.size() != 4:
@@ -522,10 +544,11 @@ func _save_calibration() -> void:
 func _config_received(_result: int, code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
 	var parsed: Variant = JSON.parse_string(body.get_string_from_utf8())
 	if code != 200 or not parsed is Dictionary:
-		if not detector_settings_pending and not calibration_post_pending:
+		if not detector_settings_pending and not calibration_post_pending and not camera_exposure_pending:
 			_notice(str(parsed.get("error", "Camera bridge unavailable")) if parsed is Dictionary else "Camera bridge unavailable")
 		detector_settings_pending = false
 		calibration_post_pending = false
+		camera_exposure_pending = false
 		return
 	
 	# Handle detector settings response
@@ -534,6 +557,13 @@ func _config_received(_result: int, code: int, _headers: PackedStringArray, body
 		if settings is Dictionary:
 			detector_settings = settings
 		detector_settings_pending = false
+		if calibration_post_pending or camera_exposure_pending:
+			return
+	
+	# Handle camera exposure response
+	if parsed.has("exposure_us"):
+		camera_exposure_us = int(parsed.get("exposure_us", camera_exposure_us))
+		camera_exposure_pending = false
 		if calibration_post_pending:
 			return
 	
@@ -1074,6 +1104,12 @@ func _draw_calibration() -> void:
 		if index > 0: draw_line(PREVIEW.position + points[index - 1] * PREVIEW.size, position, Color("75ead4"), 1)
 	if points.size() == 4:
 		draw_line(PREVIEW.position + points[3] * PREVIEW.size, PREVIEW.position + points[0] * PREVIEW.size, Color("75ead4"), 1)
+	
+	# Draw crosshair at center of preview
+	var center := PREVIEW.position + PREVIEW.size * 0.5
+	draw_line(center + Vector2(-15, 0), center + Vector2(15, 0), Color("ff6b6b"), 1)
+	draw_line(center + Vector2(0, -15), center + Vector2(0, 15), Color("ff6b6b"), 1)
+	draw_circle(center, 2, Color("ff6b6b"))
 	
 	# Right panel instructions
 	_text("1. SET SCREEN CORNERS", Vector2(361, 65), 11, Color("f7d9a0"))

@@ -129,3 +129,35 @@ class Camera:
                 self.device.close()
             else:
                 self.device.release()
+
+    def get_exposure(self):
+        """Get current exposure setting. Returns None if not supported."""
+        if self.backend == "picamera2":
+            try:
+                metadata = self.device.capture_metadata()
+                return int(metadata.get("ExposureTime", 0))
+            except Exception:
+                return None
+        elif self.backend == "opencv":
+            try:
+                # OpenCV exposure is in log scale; convert to estimated microseconds
+                val = self.device.get(cv2.CAP_PROP_EXPOSURE)
+                return int(val * 10000) if val >= 0 else None
+            except Exception:
+                return None
+        return None
+
+    def set_exposure(self, exposure_us):
+        """Set exposure in microseconds. Returns True if successful."""
+        try:
+            if self.backend == "picamera2":
+                self.device.set_controls({"AeEnable": False, "ExposureTime": int(exposure_us)})
+                return True
+            elif self.backend == "opencv":
+                # OpenCV uses log scale: convert microseconds to exposure value
+                # Approximate: exposure = log2(exposure_us / 100)
+                val = max(-13, min(0, int(np.log2(max(1, exposure_us) / 100.0))))
+                return self.device.set(cv2.CAP_PROP_EXPOSURE, val)
+            return False
+        except Exception:
+            return False
