@@ -91,6 +91,11 @@ var rng := RandomNumberGenerator.new()
 var saved_run := false
 var seen_shots: Array[String] = []
 
+# Detector settings for calibration
+var detector_settings: Dictionary = {"min_red": 210, "min_red_excess": 55}
+var detector_settings_pending := false
+var show_detection_preview := false
+
 func _ready() -> void:
 	Engine.max_fps = 60
 	font = ThemeDB.fallback_font
@@ -445,12 +450,64 @@ func _show_calibration() -> void:
 	calibration_points.clear()
 	calibration_saved = false
 	preview_timer = 0.0
+	show_detection_preview = false
+	detector_settings_pending = false
 	config_request.request("http://127.0.0.1:4244/calibration")
-	_button("RESET POINTS", Rect2(361, 239, 253, 24), func() -> void:
+	config_request.request("http://127.0.0.1:4244/detector/settings")
+	
+	# Title
+	_center("CAMERA CALIBRATION", 20, 18, Color.WHITE)
+	
+	# Corner calibration section
+	_text("1. SET SCREEN CORNERS", Vector2(375, 68), 12, Color.LIGHT_GRAY)
+	_text("Points: %d/4" % [calibration_points.size()], Vector2(375, 88), 11, Color.WHITE)
+	
+	# Laser detection section
+	_text("2. ADJUST LASER DETECTION", Vector2(375, 115), 12, Color.LIGHT_GRAY)
+	
+	_text("Min Red:", Vector2(375, 138), 10, Color.GRAY)
+	_text(str(detector_settings.get("min_red", 210)), Vector2(450, 138), 10, Color.WHITE)
+	_button("-", Rect2(470, 135, 14, 12), func() -> void:
+		detector_settings["min_red"] = max(0, detector_settings.get("min_red", 210) - 10)
+		_save_detector_settings())
+	_button("+", Rect2(488, 135, 14, 12), func() -> void:
+		detector_settings["min_red"] = min(255, detector_settings.get("min_red", 210) + 10)
+		_save_detector_settings())
+	
+	_text("Red Excess:", Vector2(375, 160), 10, Color.GRAY)
+	_text(str(detector_settings.get("min_red_excess", 55)), Vector2(450, 160), 10, Color.WHITE)
+	_button("-", Rect2(470, 157, 14, 12), func() -> void:
+		detector_settings["min_red_excess"] = max(0, detector_settings.get("min_red_excess", 55) - 5)
+		_save_detector_settings())
+	_button("+", Rect2(488, 157, 14, 12), func() -> void:
+		detector_settings["min_red_excess"] = min(255, detector_settings.get("min_red_excess", 55) + 5)
+		_save_detector_settings())
+	
+	# Preview toggle and status
+	_button("PREVIEW", Rect2(375, 185, 70, 16), func() -> void:
+		show_detection_preview = not show_detection_preview)
+	var preview_status = "ON" if show_detection_preview else "OFF"
+	_text(preview_status, Vector2(455, 187), 10, Color.YELLOW if show_detection_preview else Color.GRAY)
+	
+	# Status line
+	var status_text := "SAVED" if calibration_saved else "Not saved"
+	_text(status_text, Vector2(375, 210), 10, Color.GREEN if calibration_saved else Color.GRAY)
+	
+	# Bottom action buttons - stacked vertically with big spacing
+	_button("RESET", Rect2(375, 240, 110, 18), func() -> void:
 		calibration_points.clear()
 		calibration_saved = false)
-	_button("SAVE CALIBRATION", Rect2(361, 268, 253, 24), _save_calibration)
-	_button("BACK", Rect2(361, 297, 253, 24), _show_menu)
+	_button("SAVE", Rect2(375, 268, 110, 18), _save_calibration)
+	_button("BACK", Rect2(375, 296, 110, 18), _show_menu)
+
+func _save_detector_settings() -> void:
+	var err := config_request.request(
+		"http://127.0.0.1:4244/detector/settings",
+		PackedStringArray(["Content-Type: application/json"]),
+		HTTPClient.METHOD_POST,
+		JSON.stringify(detector_settings)
+	)
+	detector_settings_pending = err == OK
 
 func _save_calibration() -> void:
 	if calibration_points.size() != 4:
@@ -465,19 +522,33 @@ func _save_calibration() -> void:
 func _config_received(_result: int, code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
 	var parsed: Variant = JSON.parse_string(body.get_string_from_utf8())
 	if code != 200 or not parsed is Dictionary:
+		if not detector_settings_pending and not calibration_post_pending:
+			_notice(str(parsed.get("error", "Camera bridge unavailable")) if parsed is Dictionary else "Camera bridge unavailable")
+		detector_settings_pending = false
 		calibration_post_pending = false
-		_notice(str(parsed.get("error", "Camera bridge unavailable")) if parsed is Dictionary else "Camera bridge unavailable")
 		return
-	saved_points.clear()
-	var values: Variant = parsed.get("corners", [])
-	if values is Array:
-		for point in values:
-			if point is Array and point.size() == 2:
-				saved_points.append(Vector2(float(point[0]), float(point[1])))
-	if calibration_post_pending:
-		calibration_post_pending = false
-		calibration_saved = true
-		_notice("Calibration saved")
+	
+	# Handle detector settings response
+	if parsed.has("detector"):
+		var settings: Variant = parsed.get("detector", {})
+		if settings is Dictionary:
+			detector_settings = settings
+		detector_settings_pending = false
+		if calibration_post_pending:
+			return
+	
+	# Handle calibration response
+	if parsed.has("corners"):
+		saved_points.clear()
+		var values: Variant = parsed.get("corners", [])
+		if values is Array:
+			for point in values:
+				if point is Array and point.size() == 2:
+					saved_points.append(Vector2(float(point[0]), float(point[1])))
+		if calibration_post_pending:
+			calibration_post_pending = false
+			calibration_saved = true
+			_notice("Calibration saved")
 
 func _camera_received(_result: int, code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
 	preview_busy = false
@@ -506,7 +577,11 @@ func _process(delta: float) -> void:
 		preview_timer -= delta
 		if preview_timer <= 0.0 and not preview_busy:
 			preview_timer = 0.15
-			preview_busy = camera_request.request("http://127.0.0.1:4244/frame.jpg") == OK
+			preview_busy = true
+			if show_detection_preview:
+				preview_busy = camera_request.request("http://127.0.0.1:4244/calibration/preview.jpg") == OK
+			else:
+				preview_busy = camera_request.request("http://127.0.0.1:4244/frame.jpg") == OK
 	if state == "playing":
 		elapsed += delta
 		if mode == "Timed" and elapsed >= 90.0:
@@ -981,25 +1056,41 @@ func _draw_calibration() -> void:
 	draw_rect(Rect2(Vector2.ZERO, SIZE), Color("19232c"))
 	for point in [Vector2(3, 3), Vector2(625, 3), Vector2(625, 345), Vector2(3, 345)]:
 		draw_rect(Rect2(point, Vector2(12, 12)), Color("f7f0d0"))
-	_center("CAMERA CALIBRATION", 37, 21)
-	_text("Camera view", Vector2(18, 65), 12)
+	
+	# Camera preview on left
+	_text("Camera Preview", Vector2(18, 65), 12)
 	draw_rect(PREVIEW, Color("101419"))
 	if camera_texture:
 		draw_texture_rect(camera_texture, PREVIEW, false)
 	else:
 		_text("Waiting for camera...", Vector2(73, 190), 12)
+	
+	# Draw calibration corner points
 	var points := calibration_points if not calibration_points.is_empty() else saved_points
 	for index in range(points.size()):
 		var position: Vector2 = PREVIEW.position + points[index] * PREVIEW.size
 		draw_circle(position, 4, Color("75ead4"))
-		_text(str(index + 1), position + Vector2(6, -5), 12, Color("75ead4"))
+		_text(str(index + 1), position + Vector2(6, -5), 11, Color("75ead4"))
 		if index > 0: draw_line(PREVIEW.position + points[index - 1] * PREVIEW.size, position, Color("75ead4"), 1)
 	if points.size() == 4:
 		draw_line(PREVIEW.position + points[3] * PREVIEW.size, PREVIEW.position + points[0] * PREVIEW.size, Color("75ead4"), 1)
-	_text("Click the projected image corners", Vector2(361, 82), 12)
-	_text("inside the camera view:", Vector2(361, 100), 12)
-	var instructions := ["1  TOP LEFT", "2  TOP RIGHT", "3  BOTTOM RIGHT", "4  BOTTOM LEFT"]
-	for index in range(4):
-		_text(instructions[index], Vector2(371, 129 + index * 22), 13, Color("75ead4") if index < calibration_points.size() else Color("f6e6bf"))
-	_text("Saved" if calibration_saved else "Then save calibration.", Vector2(361, 223), 11)
+	
+	# Right panel instructions
+	_text("1. SET SCREEN CORNERS", Vector2(361, 65), 11, Color("f7d9a0"))
+	_text("Points: %d/4" % calibration_points.size(), Vector2(361, 78), 10, Color("b8a885"))
+	
+	# Detector settings display
+	_text("2. ADJUST LASER DETECTION", Vector2(361, 98), 11, Color("f7d9a0"))
+	_text("Min Red: %d" % detector_settings.get("min_red", 210), Vector2(361, 110), 10, Color("b8a885"))
+	_text("Red Excess: %d" % detector_settings.get("min_red_excess", 55), Vector2(361, 122), 10, Color("b8a885"))
+	
+	# Preview status
+	var preview_text := "Preview: ON" if show_detection_preview else "Preview: OFF"
+	_text(preview_text, Vector2(361, 138), 10, Color("75eb8c") if show_detection_preview else Color("8a9aaa"))
+	
+	# Status
+	var status_text := "SAVED ✓" if calibration_saved else "Not saved"
+	_text(status_text, Vector2(361, 150), 10, Color("75eb8c") if calibration_saved else Color("b8a885"))
+	
+	# Bridge status
 	_text(preview_error if not preview_error.is_empty() else bridge_status, Vector2(18, 336), 10)

@@ -198,6 +198,46 @@ class Bridge:
             self.mapper = mapper
         return {"corners": points}
 
+    def save_detector_settings(self, settings):
+        with self.config_lock:
+            updated = json.loads(json.dumps(self.config))
+            updated["detector"].update(settings)
+            self.config_path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = self.config_path.with_suffix(".tmp")
+            temporary.write_text(json.dumps(updated, indent=2) + "\n")
+            temporary.replace(self.config_path)
+            self.config = updated
+        return {"detector": self.config["detector"]}
+
+    def get_detection_preview(self):
+        """Get latest frame with detection marked."""
+        latest = self.camera.latest()
+        if latest is None or time.monotonic() - latest.timestamp > .5:
+            return None
+        
+        frame = latest.image.copy()
+        result = detect(frame, background=None, 
+                       settings=self.config.get("detector", {}), 
+                       mapper=self.mapper)
+        
+        height, width = frame.shape[:2]
+        
+        if result:
+            px = int(result.x * (width - 1))
+            py = int(result.y * (height - 1))
+            cv2.circle(frame, (px, py), 20, (0, 255, 0), 2)
+            cv2.circle(frame, (px, py), 1, (0, 255, 255), -1)
+            
+            if self.mapper:
+                proj = self.mapper.project((result.x, result.y))
+                if proj:
+                    screen_px = int(proj[0] * (width - 1))
+                    screen_py = int(proj[1] * (height - 1))
+                    cv2.circle(frame, (screen_px, screen_py), 25, (255, 0, 0), 2)
+        
+        ok, encoded = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        return encoded.tobytes() if ok else None
+
     def start_http(self):
         bridge = self
         class Handler(BaseHTTPRequestHandler):
@@ -225,24 +265,43 @@ class Bridge:
                     self.reply(200, image.tobytes(), "image/jpeg") if ok else self.reply(503, {"error": "JPEG encoding failed"})
                 elif self.path == "/calibration":
                     self.reply(200, {"corners": bridge.config["corners"]})
+                elif self.path == "/calibration/preview.jpg":
+                    preview = bridge.get_detection_preview()
+                    if preview is None:
+                        self.reply(503, {"error": "No fresh camera frame"})
+                        return
+                    self.reply(200, preview, "image/jpeg")
+                elif self.path == "/detector/settings":
+                    self.reply(200, {"detector": bridge.config.get("detector", {})})
                 elif self.path == "/status":
                     self.reply(200, {"message": bridge.status_message(), "calibrated": bridge.mapper is not None})
                 else:
                     self.reply(404, {"error": "Unknown endpoint"})
             def do_POST(self):
-                if self.path != "/calibration":
+                if self.path == "/calibration":
+                    try:
+                        size = int(self.headers.get("Content-Length", "0"))
+                        if not 0 < size < 4096:
+                            raise ValueError("Invalid calibration payload size")
+                        body = json.loads(self.rfile.read(size))
+                        self.reply(200, bridge.save_calibration(body["corners"]))
+                    except (ValueError, KeyError, TypeError) as exc:
+                        self.reply(400, {"error": str(exc)})
+                    except OSError as exc:
+                        self.reply(500, {"error": f"Could not save calibration: {exc}"})
+                elif self.path == "/detector/settings":
+                    try:
+                        size = int(self.headers.get("Content-Length", "0"))
+                        if not 0 < size < 2048:
+                            raise ValueError("Invalid settings payload size")
+                        body = json.loads(self.rfile.read(size))
+                        self.reply(200, bridge.save_detector_settings(body))
+                    except (ValueError, KeyError, TypeError) as exc:
+                        self.reply(400, {"error": str(exc)})
+                    except OSError as exc:
+                        self.reply(500, {"error": f"Could not save settings: {exc}"})
+                else:
                     self.reply(404, {"error": "Unknown endpoint"})
-                    return
-                try:
-                    size = int(self.headers.get("Content-Length", "0"))
-                    if not 0 < size < 4096:
-                        raise ValueError("Invalid calibration payload size")
-                    body = json.loads(self.rfile.read(size))
-                    self.reply(200, bridge.save_calibration(body["corners"]))
-                except (ValueError, KeyError, TypeError) as exc:
-                    self.reply(400, {"error": str(exc)})
-                except OSError as exc:
-                    self.reply(500, {"error": f"Could not save calibration: {exc}"})
         self.http = ThreadingHTTPServer(("127.0.0.1", 4244), Handler)
         self.http.daemon_threads = True
         threading.Thread(target=self.http.serve_forever, daemon=True).start()
