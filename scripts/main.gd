@@ -98,6 +98,12 @@ var show_detection_preview := false
 var camera_exposure_us := 5000
 var camera_exposure_pending := false
 
+# Black screen laser detection (synchronous handshake with bridge)
+var black_screen_active := false
+var black_screen_duration := 0.03  # 30ms flash (imperceptible)
+var black_screen_elapsed := 0.0
+var current_shot_id := ""
+
 func _ready() -> void:
 	Engine.max_fps = 60
 	font = ThemeDB.fallback_font
@@ -131,6 +137,7 @@ func _ready() -> void:
 	command_udp.set_dest_address("127.0.0.1", 4243)
 	_load_settings()
 	_load_scores()
+	config_request.request("http://127.0.0.1:4244/calibration")
 	if DisplayServer.get_name() != "headless":
 		for sound in ["shot", "shot-with-reload", "reload", "enemy", "civilian", "draw", "dont_shoot", "death1", "death2", "glass"]:
 			var player := AudioStreamPlayer.new()
@@ -607,6 +614,16 @@ func _process(delta: float) -> void:
 	message_left = maxf(0.0, message_left - delta)
 	damage_flash = maxf(0.0, damage_flash - delta)
 	muzzle_flash = maxf(0.0, muzzle_flash - delta)
+	
+	# Manage black screen for laser detection
+	if black_screen_active:
+		black_screen_elapsed += delta
+		if black_screen_elapsed >= black_screen_duration:
+			# Black screen duration complete, signal bridge to capture
+			_signal_black_screen_ready()
+			black_screen_active = false
+			black_screen_elapsed = 0.0
+	
 	for shot in shots: shot.ttl -= delta
 	shots = shots.filter(func(shot: Dictionary) -> bool: return shot.ttl > 0.0)
 	if state == "calibration":
@@ -797,6 +814,18 @@ func _activate_button(point: Vector2) -> void:
 			item.action.call()
 			return
 
+func _signal_black_screen_ready() -> void:
+	"""Signal bridge that black screen is ready and laser detection can proceed."""
+	if current_shot_id.is_empty():
+		return
+	var request := HTTPRequest.new()
+	add_child(request)
+	var body := JSON.stringify({"id": current_shot_id})
+	var error := request.request("http://127.0.0.1:4244/shot/black-screen", ["Content-Type: application/json"], HTTPClient.METHOD_POST, body)
+	if error != OK:
+		push_error("Failed to signal bridge: ", error)
+	request.tree_exited.connect(func(): request.queue_free())
+
 func _check_bridge_connection(now: float) -> void:
 	if now - bridge_last_seen <= BRIDGE_TIMEOUT:
 		return
@@ -818,7 +847,21 @@ func _poll_input() -> void:
 		if not data is Dictionary: continue
 		if data.get("type") == "status":
 			_bridge_status_received(str(data.get("message", "Camera bridge connected")), Time.get_ticks_msec() / 1000.0)
+		elif data.get("type") == "lightgun_trigger" and input_mode == "Lightgun" and state != "calibration":
+			# New black-screen protocol: bridge tells game to render black screen
+			var trigger_id := str(data.get("id", ""))
+			if trigger_id.is_empty() or trigger_id in seen_shots:
+				continue
+			seen_shots.append(trigger_id)
+			if seen_shots.size() > 128: seen_shots.pop_front()
+			if state == "playing" and float(data.get("fired_at", 0.0)) < combat_started_at:
+				continue
+			# Start black screen render and prepare to signal bridge
+			current_shot_id = trigger_id
+			black_screen_active = true
+			black_screen_elapsed = 0.0
 		elif data.get("type") == "shot" and input_mode == "Lightgun" and state != "calibration":
+			# Legacy: direct shot result (from old protocol or mouse input simulation)
 			var identifier := str(data.get("id", ""))
 			var age := Time.get_unix_time_from_system() - float(data.get("fired_at", 0.0))
 			if identifier.is_empty() or identifier in seen_shots or age > 0.8 or age < -1.0: continue
@@ -915,6 +958,8 @@ func _draw() -> void:
 	if message_left > 0.0:
 		draw_rect(Rect2(100, 5, 440, 23), Color(0.04, 0.04, 0.04, 0.92))
 		_center(message, 21, 12, Color("ffe6a0"))
+	if black_screen_active:
+		draw_rect(Rect2(Vector2.ZERO, SIZE), Color.BLACK)
 
 func _draw_crosshair(point: Vector2) -> void:
 	draw_circle(point, 8, Color("fff3ce"), false, 1.0)

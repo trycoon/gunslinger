@@ -2,8 +2,8 @@
   "camera": {
     "backend": "opencv",
     "device": 0,
-    "width": 1280,
-    "height": 720,
+    "width": 640,
+    "height": 480,
     "fps": 30
   },
   "ble": {
@@ -12,8 +12,8 @@
     "enabled": true
   },
   "detector": {
-    "min_red": 210,
-    "min_red_excess": 55,
+    "min_red": 180,
+    "min_red_excess": 40,
     "min_area": 3,
     "max_area": 450,
     "min_change": 25

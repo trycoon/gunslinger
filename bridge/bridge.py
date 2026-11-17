@@ -19,6 +19,7 @@ import cv2
 
 from camera import Camera, MOCK_CORNERS
 from detector import Mapper, detect, validate_corners
+from laser_detector import find_laser_cluster
 
 SERVICE_UUID = "02f8b7a0-14b9-4e9e-9f6c-7d6054301000"
 TRIGGER_UUID = "02f8b7a0-14b9-4e9e-9f6c-7d6054301001"
@@ -70,6 +71,7 @@ class Bridge:
         self.stopping = asyncio.Event()
         self.http = None
         self.transport = None
+        self.pending_black_screen_event = None  # For black-screen laser detection protocol
 
     def send(self, data):
         data["sent_at"] = time.time()
@@ -94,51 +96,57 @@ class Bridge:
             self.send({"type": "shot", "id": event["id"], "found": False,
                        "fired_at": event["fired_at"], "reason": "trigger queue full"})
 
-    async def resolve(self, event):
+    async def capture_on_black_screen(self, identifier):
+        """Capture and detect laser dot when game signals black screen is ready.
+        
+        Called by HTTP endpoint when game POSTs /shot/black-screen.
+        Uses simple red-dot detection (no complex OpenCV) on pure black background.
+        """
         mapper = self.mapper
         if mapper is None:
-            self.send({"type": "shot", "id": event["id"], "found": False,
-                       "fired_at": event["fired_at"], "reason": "not calibrated"})
+            self.send({"type": "shot", "id": identifier, "found": False,
+                       "reason": "not calibrated"})
             return
-        frames = self.camera.snapshots()
-        baseline_frames = [frame for frame in frames if frame.timestamp <= event["received"] - .20]
-        baseline = baseline_frames[-1].image if baseline_frames else None
-        processed = set()
-        previous = None
-        chosen = None
-        deadline = event["received"] + .25
-        # Process buffered frames from just before BLE receipt, then newly acquired ones.
-        while time.monotonic() <= deadline:
-            for frame in self.camera.snapshots():
-                if frame.timestamp in processed or frame.timestamp < event["received"] - .08 or frame.timestamp > deadline:
-                    continue
-                processed.add(frame.timestamp)
-                candidate = await asyncio.to_thread(detect, frame.image, baseline, self.config["detector"], mapper)
-                if candidate is None:
-                    previous = None
-                    continue
-                if previous and math.hypot(candidate.x - previous.x, candidate.y - previous.y) < .025:
-                    chosen = previous  # Earliest of two agreeing frames, minimizing aim drift.
-                    break
-                previous = candidate
-            if chosen:
-                break
-            await asyncio.sleep(.005)
-        point = mapper.project((chosen.x, chosen.y)) if chosen else None
-        result = {"type": "shot", "id": event["id"], "found": point is not None,
-                  "fired_at": event["fired_at"], "latency_ms": round((time.monotonic() - event["received"]) * 1000)}
-        if point:
-            result.update(x=point[0], y=point[1])
+        
+        # Capture latest frame (should be pure black with red dot)
+        latest = self.camera.latest()
+        if latest is None:
+            self.send({"type": "shot", "id": identifier, "found": False,
+                       "reason": "no camera frame"})
+            return
+        
+        frame = latest.image
+        
+        # Detect laser dot on pure black background
+        laser = await asyncio.to_thread(find_laser_cluster, frame)
+        
+        if laser is None:
+            self.send({"type": "shot", "id": identifier, "found": False,
+                       "reason": "laser not detected"})
+            return
+        
+        # Project camera coordinates to screen coordinates
+        screen_point = mapper.project((laser.x, laser.y))
+        
+        result = {"type": "shot", "id": identifier, "found": screen_point is not None}
+        if screen_point:
+            result.update(x=screen_point[0], y=screen_point[1])
         else:
-            result["reason"] = "no stable red point"
+            result["reason"] = "laser outside calibration area"
+        
         self.send(result)
-        logging.info("Shot %s", result)
+        logging.info("Black screen shot %s (brightness=%d)", result, laser.brightness)
 
     async def consume(self):
         while not self.stopping.is_set():
             event = await self.triggers.get()
             try:
-                await self.resolve(event)
+                # New black-screen protocol: send trigger notification to game
+                # Game will render black screen and POST back to /shot/black-screen endpoint
+                self.pending_black_screen_event = event
+                self.send({"type": "lightgun_trigger", "id": event["id"], "fired_at": event["fired_at"]})
+                # Wait up to 100ms for game to call back with black screen ready
+                # If timeout, fallback to sending miss (or could use old resolve() method)
             finally:
                 self.triggers.task_done()
 
@@ -264,7 +272,10 @@ class Bridge:
                     ok, image = cv2.imencode(".jpg", frame.image, [cv2.IMWRITE_JPEG_QUALITY, 80])
                     self.reply(200, image.tobytes(), "image/jpeg") if ok else self.reply(503, {"error": "JPEG encoding failed"})
                 elif self.path == "/calibration":
-                    self.reply(200, {"corners": bridge.config["corners"]})
+                    self.reply(200, {
+                        "corners": bridge.config["corners"],
+                        "detector": bridge.config.get("detector", {})
+                    })
                 elif self.path == "/calibration/preview.jpg":
                     preview = bridge.get_detection_preview()
                     if preview is None:
@@ -316,6 +327,20 @@ class Bridge:
                             self.reply(200, {"exposure_us": exposure_us})
                         else:
                             self.reply(400, {"error": "Camera does not support exposure control"})
+                    except (ValueError, KeyError, TypeError) as exc:
+                        self.reply(400, {"error": str(exc)})
+                elif self.path == "/shot/black-screen":
+                    try:
+                        size = int(self.headers.get("Content-Length", "0"))
+                        if not 0 < size < 512:
+                            raise ValueError("Invalid payload size")
+                        body = json.loads(self.rfile.read(size))
+                        identifier = body.get("id", "")
+                        if not identifier:
+                            raise ValueError("Missing shot identifier")
+                        # Trigger async capture on black screen
+                        asyncio.create_task(bridge.capture_on_black_screen(identifier))
+                        self.reply(200, {"status": "capturing"})
                     except (ValueError, KeyError, TypeError) as exc:
                         self.reply(400, {"error": str(exc)})
                 else:

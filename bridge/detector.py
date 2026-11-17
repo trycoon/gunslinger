@@ -36,15 +36,36 @@ class Mapper:
         return float(np.clip(x, 0, 1)), float(np.clip(y, 0, 1))
 
 
-def detect(frame, background=None, settings=None, mapper=None):
+def is_flash_frame(frame):
+    """Detect if frame is a dark flash frame (black background for laser detection).
+    
+    Returns True if the frame has very low mean brightness (dark background).
+    """
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    mean_brightness = np.mean(gray)
+    return mean_brightness < 30  # Threshold: very dark frame
+
+
+def detect(frame, background=None, settings=None, mapper=None, flash_frame=None):
     """Find the brightest compact red component, including red halos around white cores.
 
     Frames are BGR. A pre-trigger background suppresses static red scene content.
+    If flash_frame is None, auto-detects dark frames for loosened thresholds.
     No inference or training dataset is required. Thresholds need hardware tuning.
     """
     options = {"min_red": 210, "min_red_excess": 55, "min_area": 3,
                "max_area": 450, "min_change": 25}
     options.update(settings or {})
+    
+    # Auto-detect or use provided flash_frame flag
+    if flash_frame is None:
+        flash_frame = is_flash_frame(frame)
+    
+    # Loosen thresholds during flash frames (pure black background)
+    if flash_frame:
+        options["min_red_excess"] = max(15, options.get("min_red_excess", 55) // 2)
+        options["min_area"] = max(1, options.get("min_area", 3) - 1)
+        options["min_red"] = min(180, options.get("min_red", 210) - 20)
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
     red_mask = cv2.inRange(hsv, (0, 40, 0), (12, 255, 255)) | cv2.inRange(hsv, (168, 40, 0), (179, 255, 255))
     blue, green, red = [channel.astype(np.int16) for channel in cv2.split(frame)]
