@@ -543,9 +543,15 @@ func _save_calibration() -> void:
 
 func _config_received(_result: int, code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
 	var parsed: Variant = JSON.parse_string(body.get_string_from_utf8())
-	if code != 200 or not parsed is Dictionary:
-		if not detector_settings_pending and not calibration_post_pending and not camera_exposure_pending:
-			_notice(str(parsed.get("error", "Camera bridge unavailable")) if parsed is Dictionary else "Camera bridge unavailable")
+	var had_error := code != 200 or not parsed is Dictionary
+	
+	if had_error:
+		var error_msg := str(parsed.get("error", "Camera bridge unavailable")) if parsed is Dictionary else "Camera bridge unavailable"
+		if camera_exposure_pending:
+			error_msg = "Exposure control not supported: " + error_msg
+			_notice(error_msg)
+		elif not detector_settings_pending and not calibration_post_pending:
+			_notice(error_msg)
 		detector_settings_pending = false
 		calibration_post_pending = false
 		camera_exposure_pending = false
@@ -1105,11 +1111,10 @@ func _draw_calibration() -> void:
 	if points.size() == 4:
 		draw_line(PREVIEW.position + points[3] * PREVIEW.size, PREVIEW.position + points[0] * PREVIEW.size, Color("75ead4"), 1)
 	
-	# Draw crosshair at center of preview
+	# Draw crosshair at center of preview (cyan - won't interfere with red laser detection)
 	var center := PREVIEW.position + PREVIEW.size * 0.5
-	draw_line(center + Vector2(-15, 0), center + Vector2(15, 0), Color("ff6b6b"), 1)
-	draw_line(center + Vector2(0, -15), center + Vector2(0, 15), Color("ff6b6b"), 1)
-	draw_circle(center, 2, Color("ff6b6b"))
+	draw_line(center + Vector2(-12, 0), center + Vector2(12, 0), Color("00ffff"), 1)
+	draw_line(center + Vector2(0, -12), center + Vector2(0, 12), Color("00ffff"), 1)
 	
 	# Right panel instructions
 	_text("1. SET SCREEN CORNERS", Vector2(361, 65), 11, Color("f7d9a0"))
